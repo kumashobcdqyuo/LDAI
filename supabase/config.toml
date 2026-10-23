@@ -1,0 +1,5 @@
+[functions.get-advice]
+verify_jwt = true
+
+[functions.chat-ai]
+verify_jwt = true

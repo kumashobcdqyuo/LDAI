@@ -1,0 +1,13 @@
+{
+  "projectId": "72074876",
+  "functions": {
+    "chat-ai": {
+      "hasChanged": false,
+      "hash": "c338934ba6c7a46f2b4a717ac1edc8cbcd5db8bb5128f0fab490dd57bcee7aa3"
+    },
+    "get-advice": {
+      "hasChanged": false,
+      "hash": "e35f496c30fee37ee2f2d431c6986900ac11abb99f2ad100c1c8ab13738678ae"
+    }
+  }
+}
