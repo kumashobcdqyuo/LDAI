@@ -332,14 +332,14 @@ function App() {
               </div>
             </div>
 
+            {/* Record Form */}
+            <RecordForm onAdd={handleAddRecord} subjects={allSubjects} onAddSubject={addSubject} onRemoveSubject={removeSubject} />
+
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <DailyBarChart data={chartData} title={`${periodLabel}の学習時間`} />
               <SubjectPieChart data={subjectData} />
             </div>
-
-            {/* Record Form */}
-            <RecordForm onAdd={handleAddRecord} subjects={allSubjects} onAddSubject={addSubject} onRemoveSubject={removeSubject} />
           </div>
         ) : tab === 'plan' ? (
           <StudyPlanPanel
