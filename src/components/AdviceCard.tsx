@@ -3,6 +3,7 @@ import { AdviceResult } from '@/lib/getAdvice';
 
 interface AdviceCardProps {
   advice: AdviceResult;
+  onClick?: () => void;
 }
 
 const toneConfig = {
@@ -35,12 +36,15 @@ const toneConfig = {
   },
 };
 
-export function AdviceCard({ advice }: AdviceCardProps) {
+export function AdviceCard({ advice, onClick }: AdviceCardProps) {
   const cfg = toneConfig[advice.tone];
   const Icon = cfg.icon;
 
   return (
-    <div className={`${cfg.bg} ${cfg.border} border rounded-2xl p-5 flex gap-4 items-start`}>
+    <button
+      onClick={onClick}
+      className={`${cfg.bg} ${cfg.border} border rounded-2xl p-5 flex gap-4 items-start w-full text-left transition-shadow hover:shadow-md cursor-pointer`}
+    >
       <div className={`${cfg.iconBg} w-11 h-11 rounded-xl flex items-center justify-center shrink-0`}>
         <Icon className={`w-5 h-5 ${cfg.iconColor}`} />
       </div>
@@ -54,6 +58,6 @@ export function AdviceCard({ advice }: AdviceCardProps) {
         </div>
         <p className={`text-sm ${cfg.textColor} leading-relaxed`}>{advice.message}</p>
       </div>
-    </div>
+    </button>
   );
 }

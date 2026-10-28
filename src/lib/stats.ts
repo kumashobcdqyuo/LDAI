@@ -1,5 +1,5 @@
 import { StudyRecord } from './types';
-import { lastNDays, thisWeekDays, thisMonthStr, toDateString } from './dateUtils';
+import { lastNDays, thisWeekDays, thisMonthStr, toDateString, startOfWeek } from './dateUtils';
 
 export function totalMinutes(records: StudyRecord[]): number {
   return records.reduce((sum, r) => sum + r.minutes, 0);
@@ -7,6 +7,21 @@ export function totalMinutes(records: StudyRecord[]): number {
 
 export function minutesThisWeek(records: StudyRecord[]): number {
   const weekSet = new Set(thisWeekDays());
+  return totalMinutes(records.filter((r) => weekSet.has(r.date)));
+}
+
+/** Minutes for the previous week (Mon–Sun before the current one) */
+export function minutesLastWeek(records: StudyRecord[]): number {
+  const start = startOfWeek(new Date());
+  const prevStart = new Date(start);
+  prevStart.setDate(prevStart.getDate() - 7);
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(prevStart);
+    d.setDate(d.getDate() + i);
+    days.push(toDateString(d));
+  }
+  const weekSet = new Set(days);
   return totalMinutes(records.filter((r) => weekSet.has(r.date)));
 }
 

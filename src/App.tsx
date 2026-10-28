@@ -16,6 +16,8 @@ import {
   Target,
   CheckCircle,
   Circle,
+  Timer,
+  Play,
 } from 'lucide-react';
 import { StudyRecord } from '@/lib/types';
 import {
@@ -40,6 +42,7 @@ import { CommunityRanking } from '@/components/CommunityRanking';
 import { AdviceCard } from '@/components/AdviceCard';
 import { ChatPanel } from '@/components/ChatPanel';
 import { StudyPlanPanel } from '@/components/StudyPlanPanel';
+import { QuickStudyModal } from '@/components/QuickStudyModal';
 
 type Tab = 'dashboard' | 'plan' | 'community' | 'chat';
 
@@ -64,6 +67,7 @@ function App() {
   const [nameDone, setNameDone] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('14days');
+  const [showQuickStudy, setShowQuickStudy] = useState(false);
 
   const weekMins = minutesThisWeek(myRecords);
   const monthMins = minutesThisMonth(myRecords);
@@ -147,6 +151,14 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowQuickStudy(true)}
+              className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm px-4 py-2 rounded-xl transition-colors shadow-sm"
+            >
+              <Play className="w-4 h-4" />
+              <span className="hidden sm:inline">学習を始める</span>
+              <span className="sm:hidden">開始</span>
+            </button>
             {profile && (
               <button
                 onClick={() => {
@@ -247,7 +259,7 @@ function App() {
                 </p>
               </div>
             ) : advice ? (
-              <AdviceCard advice={advice} />
+              <AdviceCard advice={advice} onClick={() => setTab('chat')} />
             ) : null}
 
             {/* Active Plan Progress */}
@@ -344,6 +356,14 @@ function App() {
           <ChatPanel records={myRecords} userName={profile?.name} plans={plans} />
         )}
       </main>
+
+      {/* Quick Study Modal */}
+      <QuickStudyModal
+        open={showQuickStudy}
+        onClose={() => setShowQuickStudy(false)}
+        onRecord={handleAddRecord}
+        subjects={allSubjects}
+      />
 
       {/* Name Edit Modal */}
       {showNameModal && (

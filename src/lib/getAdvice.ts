@@ -5,6 +5,8 @@ import {
   subjectBreakdown,
   daysSinceLastStudy,
   totalMinutes,
+  minutesThisWeek,
+  minutesLastWeek,
 } from './stats';
 
 export interface AdviceResult {
@@ -79,19 +81,22 @@ function getLocalAdvice(records: StudyRecord[]): AdviceResult {
   const breakdown = subjectBreakdown(records);
   const total = totalMinutes(records);
   const gap = daysSinceLastStudy(records);
+  const thisWeek = minutesThisWeek(records);
+  const lastWeek = minutesLastWeek(records);
+  const diff = thisWeek - lastWeek;
 
   if (gap >= 3) {
     return {
       title: 'そろそろ再開しよう',
-      message: `最後に学習してから${gap}日が経ちました。少しずつでも再開してみましょう！`,
+      message: `最後に学習してから${gap}日が経ちました。今日15分だけでも進めてみませんか？`,
       tone: 'warn',
     };
   }
 
   if (streak >= 7) {
     return {
-      title: 'すばらしい継続力！',
-      message: `${streak}日連続で学習しています。この調子でいきましょう！`,
+      title: `${streak}日連続学習中！`,
+      message: `素晴らしい継続力です。今週は${thisWeek}分学習済み。このペースを保っていきましょう！`,
       tone: 'praise',
     };
   }
@@ -100,9 +105,10 @@ function getLocalAdvice(records: StudyRecord[]): AdviceResult {
     const top = breakdown[0];
     const ratio = top.minutes / total;
     if (ratio >= 0.7) {
+      const second = breakdown[1];
       return {
-        title: '他の科目も触れてみよう',
-        message: `「${top.subject}」が学習時間の${Math.round(ratio * 100)}%を占めています。バランスよく学ぶのがおすすめです。`,
+        title: `${top.subject}に偏り気味`,
+        message: `${top.subject}が学習時間の${Math.round(ratio * 100)}%を占めています。${second ? `${second.subject}も` : '他の科目も'}少しずつ進めるとバランスが良くなります。`,
         tone: 'tip',
       };
     }
@@ -110,15 +116,31 @@ function getLocalAdvice(records: StudyRecord[]): AdviceResult {
 
   if (streak >= 3) {
     return {
-      title: '調子がいいですね！',
-      message: `${streak}日連続学習中。このリズムを保ち続けましょう。`,
+      title: `${streak}日連続達成！`,
+      message: `今週は${thisWeek}分学習しています。${diff < 0 ? `先週より${Math.abs(diff)}分少ないので、今日少し追加してみませんか？` : diff > 0 ? `先週より${diff}分多く学習できています！` : '先週と同じペースです。このリズムを保ちましょう！'}`,
       tone: 'praise',
     };
   }
 
+  if (thisWeek > 0 && diff !== 0) {
+    return {
+      title: diff < 0 ? '今週は少し少なめ' : '今週は好調！',
+      message: `今週は${thisWeek}分学習。${diff < 0 ? `先週より${Math.abs(diff)}分少ないので、今日${Math.min(15, Math.abs(diff))}分だけ進めてみませんか？` : `先週より${diff}分多く学習できています。この調子で！`}`,
+      tone: diff < 0 ? 'warn' : 'praise',
+    };
+  }
+
+  if (total > 0) {
+    return {
+      title: 'もう一歩踏み出そう',
+      message: `今月はこれまで${total}分学習しています。今日短い時間でも記録をつけて、流れを作りましょう！`,
+      tone: 'tip',
+    };
+  }
+
   return {
-    title: 'がんばりましょう',
-    message: 'まずは短い時間でも始めてみましょう。継続が力になります！',
+    title: '最初の一歩を記録しよう',
+    message: 'まだ学習記録がありません。まずは15分だけでも記録をつけて、継続の第一歩を始めましょう！',
     tone: 'tip',
   };
 }
