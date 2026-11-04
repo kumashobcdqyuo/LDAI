@@ -24,6 +24,7 @@ import {
   minutesThisWeek,
   minutesThisMonth,
   streakDays,
+  formatHours,
   subjectBreakdown,
   chartDataForPeriod,
   filterByPeriod,
@@ -42,22 +43,16 @@ import { CommunityRanking } from '@/components/CommunityRanking';
 import { AdviceCard } from '@/components/AdviceCard';
 import { ChatPanel } from '@/components/ChatPanel';
 import { StudyPlanPanel } from '@/components/StudyPlanPanel';
+import { StudyCalendar } from '@/components/StudyCalendar';
+import { UpcomingPlans } from '@/components/UpcomingPlans';
 import { QuickStudyModal } from '@/components/QuickStudyModal';
 
-type Tab = 'dashboard' | 'plan' | 'community' | 'chat';
-
-function formatHours(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h === 0) return `${m}分`;
-  if (m === 0) return `${h}時間`;
-  return `${h}時間${m}分`;
-}
+type Tab = 'dashboard' | 'plan' | 'calendar' | 'community' | 'chat';
 
 function App() {
   const { profile, updateName, signOut } = useAuth();
   const { users, myRecords, loading, addRecord, allSubjects, addSubject, removeSubject, reload: reloadStudyData } = useStudyData();
-  const { plans, createPlan, toggleTask, addTask: addPlanTask, deletePlan } = useStudyPlans();
+  const { plans, createPlan, toggleTask, addTask: addPlanTask, setTaskSchedule, deletePlan } = useStudyPlans();
 
   const handleToggleTask = async (planId: string, taskId: string) => {
     const result = await toggleTask(planId, taskId);
@@ -213,6 +208,12 @@ function App() {
             label="学習計画"
           />
           <TabButton
+            active={tab === 'calendar'}
+            onClick={() => setTab('calendar')}
+            icon={<CalendarDays className="w-4 h-4" />}
+            label="カレンダー"
+          />
+          <TabButton
             active={tab === 'community'}
             onClick={() => setTab('community')}
             icon={<Users className="w-4 h-4" />}
@@ -346,6 +347,18 @@ function App() {
               <DailyBarChart data={chartData} title={`${periodLabel}の学習時間`} />
               <SubjectPieChart data={subjectData} />
             </div>
+          </div>
+        ) : tab === 'calendar' ? (
+          <div className="space-y-5">
+            <UpcomingPlans plans={plans} onToggleTask={handleToggleTask} />
+            <StudyCalendar
+              records={myRecords}
+              plans={plans}
+              subjects={allSubjects}
+              onToggleTask={handleToggleTask}
+              onAddTask={addPlanTask}
+              onSetTaskSchedule={setTaskSchedule}
+            />
           </div>
         ) : tab === 'plan' ? (
           <StudyPlanPanel
