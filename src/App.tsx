@@ -56,8 +56,14 @@ function formatHours(min: number): string {
 
 function App() {
   const { profile, updateName, signOut } = useAuth();
-  const { users, myRecords, loading, addRecord, allSubjects, addSubject, removeSubject } = useStudyData();
+  const { users, myRecords, loading, addRecord, allSubjects, addSubject, removeSubject, reload: reloadStudyData } = useStudyData();
   const { plans, createPlan, toggleTask, addTask: addPlanTask, deletePlan } = useStudyPlans();
+
+  const handleToggleTask = async (planId: string, taskId: string) => {
+    const result = await toggleTask(planId, taskId);
+    if (!result.error) await reloadStudyData();
+    return result;
+  };
   const [tab, setTab] = useState<Tab>('dashboard');
   const [advice, setAdvice] = useState<AdviceResult | null>(null);
   const [adviceLoading, setAdviceLoading] = useState(false);
@@ -346,7 +352,7 @@ function App() {
             plans={plans}
             subjects={allSubjects}
             onCreatePlan={createPlan}
-            onToggleTask={toggleTask}
+            onToggleTask={handleToggleTask}
             onAddTask={addPlanTask}
             onDeletePlan={deletePlan}
           />

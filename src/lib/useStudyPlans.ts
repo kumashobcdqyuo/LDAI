@@ -2,6 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
 import { useAuth } from './auth';
 import { StudyPlan, StudyPlanTask } from './types';
+import { todayStr } from './dateUtils';
+
+async function addTaskRecord(plan: StudyPlan, task: StudyPlanTask): Promise<string | null> {
+  const { error } = await supabase.from('study_records').insert({
+    date: todayStr(),
+    subject: task.subject,
+    minutes: task.targetMinutes,
+    memo: plan.title,
+    plan_task_id: task.id,
+  });
+  return error ? error.message : null;
+}
+
+async function removeTaskRecord(taskId: string): Promise<string | null> {
+  const { error } = await supabase.from('study_records').delete().eq('plan_task_id', taskId);
+  return error ? error.message : null;
+}
 
 interface PlanRow {
   id: string;
@@ -140,7 +157,7 @@ export function useStudyPlans() {
     async (planId: string, taskId: string): Promise<{ error: string | null }> => {
       const plan = plans.find((p) => p.id === planId);
       const task = plan?.tasks.find((t) => t.id === taskId);
-      if (!task) return { error: 'Task not found' };
+      if (!plan || !task) return { error: 'Task not found' };
 
       const newDone = !task.done;
 
@@ -155,13 +172,7 @@ export function useStudyPlans() {
         ),
       );
 
-      const { error } = await supabase
-        .from('study_plan_tasks')
-        .update({ done: newDone })
-        .eq('id', taskId);
-
-      if (error) {
-        // Revert on error
+      const revert = () =>
         setPlans((prev) =>
           prev.map((p) =>
             p.id === planId
@@ -172,7 +183,25 @@ export function useStudyPlans() {
               : p,
           ),
         );
+
+      const { error } = await supabase
+        .from('study_plan_tasks')
+        .update({ done: newDone })
+        .eq('id', taskId);
+
+      if (error) {
+        revert();
         return { error: error.message };
+      }
+
+      const syncError = newDone
+        ? await addTaskRecord(plan, task)
+        : await removeTaskRecord(taskId);
+
+      if (syncError) {
+        await supabase.from('study_plan_tasks').update({ done: task.done }).eq('id', taskId);
+        revert();
+        return { error: syncError };
       }
 
       return { error: null };
