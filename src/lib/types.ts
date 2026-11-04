@@ -27,6 +27,7 @@ export interface StudyPlanTask {
   subject: string;
   targetMinutes: number;
   done: boolean;
+  scheduledDate: string | null; // YYYY-MM-DD, null when not placed on the calendar
 }
 
 export interface StudyPlan {

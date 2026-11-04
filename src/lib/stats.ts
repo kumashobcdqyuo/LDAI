@@ -30,27 +30,38 @@ export function minutesThisMonth(records: StudyRecord[]): number {
   return totalMinutes(records.filter((r) => r.date.startsWith(month)));
 }
 
-/** Consecutive study days ending today or yesterday */
-export function streakDays(records: StudyRecord[]): number {
+/** Dates (YYYY-MM-DD, newest first) of the streak ending today or yesterday */
+export function currentStreakDates(records: StudyRecord[]): string[] {
   const studiedDates = new Set(records.map((r) => r.date));
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Allow streak to count from today; if not studied today, check yesterday
-  let streak = 0;
-  let cursor = new Date(today);
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
 
   // If not studied today, start from yesterday so the streak isn't zero mid-day
   if (!studiedDates.has(dateToStr(cursor))) {
     cursor.setDate(cursor.getDate() - 1);
-    if (!studiedDates.has(dateToStr(cursor))) return 0;
+    if (!studiedDates.has(dateToStr(cursor))) return [];
   }
 
+  const dates: string[] = [];
   while (studiedDates.has(dateToStr(cursor))) {
-    streak++;
+    dates.push(dateToStr(cursor));
     cursor.setDate(cursor.getDate() - 1);
   }
-  return streak;
+  return dates;
+}
+
+/** Formats minutes as 〇時間〇分 */
+export function formatHours(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}分`;
+  if (m === 0) return `${h}時間`;
+  return `${h}時間${m}分`;
+}
+
+/** Consecutive study days ending today or yesterday */
+export function streakDays(records: StudyRecord[]): number {
+  return currentStreakDates(records).length;
 }
 
 function dateToStr(d: Date): string {

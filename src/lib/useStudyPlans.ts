@@ -34,6 +34,19 @@ interface TaskRow {
   subject: string;
   target_minutes: number;
   done: boolean;
+  scheduled_date: string | null;
+}
+
+const TASK_COLUMNS = 'id, plan_id, subject, target_minutes, done, scheduled_date';
+
+function toTask(row: TaskRow): StudyPlanTask {
+  return {
+    id: row.id,
+    subject: row.subject,
+    targetMinutes: row.target_minutes,
+    done: row.done,
+    scheduledDate: row.scheduled_date,
+  };
 }
 
 export function useStudyPlans() {
@@ -52,7 +65,7 @@ export function useStudyPlans() {
 
     const [plansRes, tasksRes] = await Promise.all([
       supabase.from('study_plans').select('id, title, goal, start_date, end_date').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('study_plan_tasks').select('id, plan_id, subject, target_minutes, done').order('created_at', { ascending: true }),
+      supabase.from('study_plan_tasks').select(TASK_COLUMNS).order('created_at', { ascending: true }),
     ]);
 
     if (plansRes.error) {
@@ -68,12 +81,7 @@ export function useStudyPlans() {
     const tasksByPlan = new Map<string, StudyPlanTask[]>();
     for (const t of taskRows) {
       const arr = tasksByPlan.get(t.plan_id) ?? [];
-      arr.push({
-        id: t.id,
-        subject: t.subject,
-        targetMinutes: t.target_minutes,
-        done: t.done,
-      });
+      arr.push(toTask(t));
       tasksByPlan.set(t.plan_id, arr);
     }
 
@@ -135,16 +143,11 @@ export function useStudyPlans() {
               target_minutes: t.targetMinutes,
             })),
           )
-          .select('id, subject, target_minutes, done');
+          .select(TASK_COLUMNS);
 
         if (taskError) return { error: taskError.message };
 
-        newPlan.tasks = (taskData as TaskRow[]).map((t) => ({
-          id: t.id,
-          subject: t.subject,
-          targetMinutes: t.target_minutes,
-          done: t.done,
-        }));
+        newPlan.tasks = (taskData as TaskRow[]).map(toTask);
       }
 
       setPlans((prev) => [newPlan, ...prev]);
@@ -210,25 +213,50 @@ export function useStudyPlans() {
   );
 
   const addTask = useCallback(
-    async (planId: string, subject: string, targetMinutes: number): Promise<{ error: string | null }> => {
+    async (
+      planId: string,
+      subject: string,
+      targetMinutes: number,
+      scheduledDate: string | null = null,
+    ): Promise<{ error: string | null }> => {
       const { data, error } = await supabase
         .from('study_plan_tasks')
-        .insert({ plan_id: planId, subject, target_minutes: targetMinutes })
-        .select('id, subject, target_minutes, done')
+        .insert({ plan_id: planId, subject, target_minutes: targetMinutes, scheduled_date: scheduledDate })
+        .select(TASK_COLUMNS)
         .single();
 
       if (error) return { error: error.message };
 
-      const newTask: StudyPlanTask = {
-        id: (data as TaskRow).id,
-        subject: (data as TaskRow).subject,
-        targetMinutes: (data as TaskRow).target_minutes,
-        done: (data as TaskRow).done,
-      };
+      const newTask = toTask(data as TaskRow);
 
       setPlans((prev) =>
         prev.map((p) =>
           p.id === planId ? { ...p, tasks: [...p.tasks, newTask] } : p,
+        ),
+      );
+
+      return { error: null };
+    },
+    [],
+  );
+
+  const setTaskSchedule = useCallback(
+    async (planId: string, taskId: string, scheduledDate: string | null): Promise<{ error: string | null }> => {
+      const { error } = await supabase
+        .from('study_plan_tasks')
+        .update({ scheduled_date: scheduledDate })
+        .eq('id', taskId);
+
+      if (error) return { error: error.message };
+
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, scheduledDate } : t)),
+              }
+            : p,
         ),
       );
 
@@ -249,5 +277,5 @@ export function useStudyPlans() {
     [],
   );
 
-  return { plans, loading, createPlan, toggleTask, addTask, deletePlan, reload: loadPlans };
+  return { plans, loading, createPlan, toggleTask, addTask, setTaskSchedule, deletePlan, reload: loadPlans };
 }

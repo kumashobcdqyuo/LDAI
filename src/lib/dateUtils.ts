@@ -51,3 +51,32 @@ export function thisMonthStr(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
+
+/** Shifts a YYYY-MM-DD string by a number of days */
+export function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return toDateString(new Date(y, m - 1, d + days));
+}
+
+/** Human-readable Japanese date, e.g. 2026年11月4日(水) */
+export function formatDateJa(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('ja-JP', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  });
+}
+
+/** Returns a Sunday-first grid for a month; null marks padding cells outside the month */
+export function monthGrid(year: number, monthIndex: number): (string | null)[] {
+  const first = new Date(year, monthIndex, 1);
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const cells: (string | null)[] = Array(first.getDay()).fill(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push(toDateString(new Date(year, monthIndex, day)));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
