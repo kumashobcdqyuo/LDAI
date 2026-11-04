@@ -108,7 +108,7 @@ export function useStudyPlans() {
       goal?: string;
       startDate: string;
       endDate?: string;
-      tasks: { subject: string; targetMinutes: number }[];
+      tasks: { subject: string; targetMinutes: number; scheduledDate?: string | null }[];
     }): Promise<{ error: string | null; plan?: StudyPlan }> => {
       const { data, error } = await supabase
         .from('study_plans')
@@ -141,6 +141,7 @@ export function useStudyPlans() {
               plan_id: planRow.id,
               subject: t.subject,
               target_minutes: t.targetMinutes,
+              scheduled_date: t.scheduledDate ?? null,
             })),
           )
           .select(TASK_COLUMNS);

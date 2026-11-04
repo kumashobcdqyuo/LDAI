@@ -3,3 +3,6 @@ verify_jwt = true
 
 [functions.chat-ai]
 verify_jwt = true
+
+[functions.generate-study-plan]
+verify_jwt = true

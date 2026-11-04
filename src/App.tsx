@@ -18,6 +18,7 @@ import {
   Circle,
   Timer,
   Play,
+  Sparkles,
 } from 'lucide-react';
 import { StudyRecord } from '@/lib/types';
 import {
@@ -32,6 +33,7 @@ import {
   Period,
 } from '@/lib/stats';
 import { getAdvice, AdviceResult } from '@/lib/getAdvice';
+import { GeneratedPlan } from '@/lib/generateStudyPlan';
 import { useAuth } from '@/lib/auth';
 import { useStudyData } from '@/lib/useStudyData';
 import { useStudyPlans } from '@/lib/useStudyPlans';
@@ -46,6 +48,7 @@ import { StudyPlanPanel } from '@/components/StudyPlanPanel';
 import { StudyCalendar } from '@/components/StudyCalendar';
 import { UpcomingPlans } from '@/components/UpcomingPlans';
 import { QuickStudyModal } from '@/components/QuickStudyModal';
+import { AiPlanModal } from '@/components/AiPlanModal';
 
 type Tab = 'dashboard' | 'plan' | 'calendar' | 'community' | 'chat';
 
@@ -59,6 +62,19 @@ function App() {
     if (!result.error) await reloadStudyData();
     return result;
   };
+
+  const handleSaveAiPlan = async (generated: GeneratedPlan) => {
+    const tasks = generated.days.flatMap((d) =>
+      d.tasks.map((t) => ({ subject: t.subject, targetMinutes: t.targetMinutes, scheduledDate: d.date })),
+    );
+    const result = await createPlan({
+      title: generated.title,
+      startDate: generated.days[0].date,
+      endDate: generated.days[generated.days.length - 1].date,
+      tasks,
+    });
+    return { error: result.error };
+  };
   const [tab, setTab] = useState<Tab>('dashboard');
   const [advice, setAdvice] = useState<AdviceResult | null>(null);
   const [adviceLoading, setAdviceLoading] = useState(false);
@@ -69,6 +85,7 @@ function App() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('14days');
   const [showQuickStudy, setShowQuickStudy] = useState(false);
+  const [showAiPlan, setShowAiPlan] = useState(false);
 
   const weekMins = minutesThisWeek(myRecords);
   const monthMins = minutesThisMonth(myRecords);
@@ -350,6 +367,15 @@ function App() {
           </div>
         ) : tab === 'calendar' ? (
           <div className="space-y-5">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowAiPlan(true)}
+                className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-xl px-4 py-2.5 transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                AIと学習計画を作る
+              </button>
+            </div>
             <UpcomingPlans plans={plans} onToggleTask={handleToggleTask} />
             <StudyCalendar
               records={myRecords}
@@ -383,6 +409,15 @@ function App() {
         onRecord={handleAddRecord}
         subjects={allSubjects}
       />
+
+      {/* AI Plan Modal */}
+      {showAiPlan && (
+        <AiPlanModal
+          subjects={allSubjects}
+          onClose={() => setShowAiPlan(false)}
+          onSave={handleSaveAiPlan}
+        />
+      )}
 
       {/* Name Edit Modal */}
       {showNameModal && (
