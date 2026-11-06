@@ -78,7 +78,7 @@ export function DailyBarChart({
               axisLine={false}
             />
             <Tooltip
-              formatter={(value: number, name: string) => [`${value}分`, name]}
+              formatter={((value: number, name: string) => [`${value}分`, name]) as never}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid #e2e8f0',
