@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquarePlus, X } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { StudyRecord, StudyPlan } from '@/lib/types';
 
@@ -305,43 +305,92 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
 
   return (
     <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[400px]">
+      {/* Sidebar overlay (mobile) — tap to close */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'fixed inset-0 z-40 bg-black/30 lg:bg-transparent lg:static lg:inset-auto' : 'hidden lg:block'} lg:shrink-0`}>
-        <div className={`${sidebarOpen ? 'fixed left-0 top-0 bottom-0 w-72 bg-white shadow-xl lg:static lg:shadow-none lg:w-60' : 'w-60'} h-full flex flex-col bg-white rounded-2xl border border-gray-100`}>
-          <div className="p-3 border-b border-gray-100">
+      <div className={`${sidebarOpen ? 'fixed left-0 top-0 bottom-0 z-40 w-72 lg:static lg:z-auto lg:w-64' : 'hidden lg:block'} lg:shrink-0`}>
+        <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-xl lg:shadow-none">
+          {/* Sidebar header */}
+          <div className="px-4 py-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <MessageSquare className="w-4 h-4 text-teal-600" />
+                <span className="font-bold text-gray-800 text-sm">チャット履歴</span>
+              </div>
+              {sidebarOpen && (
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="lg:hidden text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
             <button
               onClick={handleNewChat}
               className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-medium text-sm rounded-xl py-2.5 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              新規チャット
+              新規チャットを始める
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {/* Conversation list */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {conversations.length === 0 ? (
-              <p className="text-xs text-gray-300 text-center py-4">チャット履歴がありません</p>
+              <div className="text-center py-8 px-3">
+                <MessageSquare className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                <p className="text-xs text-gray-400">チャット履歴がありません</p>
+                <p className="text-xs text-gray-300 mt-1">新規チャットから始めましょう</p>
+              </div>
             ) : (
-              conversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  className={`group flex items-center gap-2 rounded-lg px-3 py-2 cursor-pointer transition-colors ${
-                    activeConversationId === conv.id ? 'bg-teal-50 text-teal-700' : 'hover:bg-gray-50 text-gray-600'
-                  }`}
-                  onClick={() => handleSelectConversation(conv.id)}
-                >
-                  <MessageSquarePlus className="w-4 h-4 shrink-0 opacity-60" />
-                  <span className="text-sm flex-1 truncate">{conv.title}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conv.id);
-                    }}
-                    className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              conversations.map((conv) => {
+                const isActive = activeConversationId === conv.id;
+                const updated = new Date(conv.updated_at);
+                const now = new Date();
+                const diffDays = Math.floor((now.getTime() - updated.getTime()) / 86400000);
+                const dateLabel = diffDays === 0 ? '今日' : diffDays === 1 ? '昨日' : `${diffDays}日前`;
+                return (
+                  <div
+                    key={conv.id}
+                    className={`group flex items-start gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer transition-colors ${
+                      isActive ? 'bg-teal-50' : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => handleSelectConversation(conv.id)}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))
+                    <MessageSquare
+                      className={`w-4 h-4 shrink-0 mt-0.5 ${isActive ? 'text-teal-600' : 'text-gray-300'}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span
+                        className={`text-sm block truncate ${
+                          isActive ? 'text-teal-700 font-medium' : 'text-gray-600'
+                        }`}
+                      >
+                        {conv.title}
+                      </span>
+                      <span className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                        <Clock className="w-3 h-3" />
+                        {dateLabel}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteConversation(conv.id);
+                      }}
+                      className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5"
+                      title="削除"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -353,9 +402,11 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
         <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden text-gray-400 hover:text-gray-600"
+            className="lg:hidden flex items-center gap-1 text-gray-500 hover:text-teal-600 transition-colors"
+            title="チャット履歴を開く"
           >
             <MessageCircle className="w-5 h-5" />
+            <span className="text-xs font-medium">履歴</span>
           </button>
           <div className="w-9 h-9 bg-teal-100 rounded-xl flex items-center justify-center">
             <Sparkles className="w-5 h-5 text-teal-600" />
@@ -364,14 +415,6 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
             <h3 className="font-bold text-gray-800 text-sm">AI学習アドバイザー</h3>
             <p className="text-xs text-gray-400">学習相談・計画フィードバック・問題の解説</p>
           </div>
-          {sidebarOpen && (
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
         </div>
 
         {/* Messages */}

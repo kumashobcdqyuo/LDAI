@@ -16,6 +16,11 @@ export interface GeneratedPlan {
   days: GeneratedDay[];
 }
 
+export interface ChatMemory {
+  role: string;
+  content: string;
+}
+
 export interface PlanRequestInput {
   goal: string;
   startDate: string;
@@ -24,6 +29,16 @@ export interface PlanRequestInput {
   subjects: string[];
   feedback?: string;
   previousPlan?: GeneratedPlan;
+  // Detailed conditions
+  level?: string;
+  weakSubjects?: string[];
+  strongSubjects?: string[];
+  studyStyle?: string;
+  availableDays?: string[];
+  restDayPattern?: string;
+  priority?: string;
+  notes?: string;
+  memories?: ChatMemory[];
 }
 
 export interface GeneratePlanResult {
@@ -45,6 +60,19 @@ function isGeneratedPlan(value: unknown): value is GeneratedPlan {
         d.tasks.every((t) => typeof t?.subject === 'string' && typeof t?.targetMinutes === 'number'),
     )
   );
+}
+
+export async function fetchChatMemories(): Promise<ChatMemory[]> {
+  const { data, error } = await supabase
+    .from('chat_memories')
+    .select('role, content, created_at')
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  if (error || !data) return [];
+  return (data as { role: string; content: string; created_at: string }[])
+    .reverse()
+    .map((m) => ({ role: m.role, content: m.content }));
 }
 
 export async function generateStudyPlan(input: PlanRequestInput): Promise<GeneratePlanResult> {

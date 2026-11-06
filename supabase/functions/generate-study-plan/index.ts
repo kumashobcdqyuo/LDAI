@@ -25,6 +25,11 @@ interface GeneratedPlan {
   days: GeneratedDay[];
 }
 
+interface ChatMemory {
+  role: string;
+  content: string;
+}
+
 interface PlanRequest {
   goal: string;
   startDate: string;
@@ -33,6 +38,15 @@ interface PlanRequest {
   subjects: string[];
   feedback?: string;
   previousPlan?: GeneratedPlan;
+  level?: string;
+  weakSubjects?: string[];
+  strongSubjects?: string[];
+  studyStyle?: string;
+  availableDays?: string[];
+  restDayPattern?: string;
+  priority?: string;
+  notes?: string;
+  memories?: ChatMemory[];
 }
 
 function json(body: unknown, status = 200): Response {
@@ -77,6 +91,15 @@ function parseRequest(body: unknown): PlanRequest | string {
     subjects: b.subjects,
     feedback: typeof b.feedback === "string" ? b.feedback.slice(0, 300) : undefined,
     previousPlan: b.previousPlan,
+    level: typeof b.level === "string" ? b.level.slice(0, 100) : undefined,
+    weakSubjects: Array.isArray(b.weakSubjects) ? b.weakSubjects.filter((s) => typeof s === "string") : undefined,
+    strongSubjects: Array.isArray(b.strongSubjects) ? b.strongSubjects.filter((s) => typeof s === "string") : undefined,
+    studyStyle: typeof b.studyStyle === "string" ? b.studyStyle.slice(0, 200) : undefined,
+    availableDays: Array.isArray(b.availableDays) ? b.availableDays.filter((s) => typeof s === "string") : undefined,
+    restDayPattern: typeof b.restDayPattern === "string" ? b.restDayPattern.slice(0, 100) : undefined,
+    priority: typeof b.priority === "string" ? b.priority.slice(0, 200) : undefined,
+    notes: typeof b.notes === "string" ? b.notes.slice(0, 500) : undefined,
+    memories: Array.isArray(b.memories) ? b.memories.filter((m) => m && typeof m.role === "string" && typeof m.content === "string").slice(0, 30) : undefined,
   };
 }
 
@@ -100,6 +123,26 @@ function buildRuleBasedPlan(req: PlanRequest): GeneratedPlan {
   };
 }
 
+function buildMemorySummary(memories?: ChatMemory[]): string {
+  if (!memories || memories.length === 0) return "";
+  const userMemories = memories.filter((m) => m.role === "user").slice(-15);
+  const aiMemories = memories.filter((m) => m.role === "assistant").slice(-5);
+  const lines: string[] = [];
+  if (userMemories.length > 0) {
+    lines.push("過去の会話で学習者が話したこと:");
+    for (const m of userMemories) {
+      lines.push(`・${m.content.slice(0, 200)}`);
+    }
+  }
+  if (aiMemories.length > 0) {
+    lines.push("過去のAIからのアドバイス:");
+    for (const m of aiMemories) {
+      lines.push(`・${m.content.slice(0, 150)}`);
+    }
+  }
+  return lines.length > 0 ? "\n\n" + lines.join("\n") : "";
+}
+
 function buildPrompt(req: PlanRequest): string {
   const lines = [
     `目標: ${req.goal || "未設定"}`,
@@ -107,20 +150,44 @@ function buildPrompt(req: PlanRequest): string {
     `1日の学習時間の目安: ${req.dailyMinutes}分`,
     `対象科目: ${req.subjects.join("、")}`,
   ];
+
+  if (req.level) lines.push(`現在のレベル: ${req.level}`);
+  if (req.weakSubjects && req.weakSubjects.length > 0) lines.push(`苦手な科目: ${req.weakSubjects.join("、")}`);
+  if (req.strongSubjects && req.strongSubjects.length > 0) lines.push(`得意な科目: ${req.strongSubjects.join("、")}`);
+  if (req.studyStyle) lines.push(`学習スタイル: ${req.studyStyle}`);
+  if (req.availableDays && req.availableDays.length > 0) lines.push(`勉強できる曜日: ${req.availableDays.join("、")}`);
+  if (req.restDayPattern) lines.push(`休みの取り方: ${req.restDayPattern}`);
+  if (req.priority) lines.push(`優先したいこと: ${req.priority}`);
+  if (req.notes) lines.push(`その他の要望: ${req.notes}`);
+
+  // Memory context
+  const memorySummary = buildMemorySummary(req.memories);
+  if (memorySummary) {
+    lines.push(memorySummary);
+  }
+
   if (req.previousPlan) {
     lines.push("", "前回提案した計画（JSON）:", JSON.stringify(req.previousPlan));
   }
   if (req.feedback) {
     lines.push("", `学習者からの修正希望: ${req.feedback}`);
   }
+
   lines.push(
     "",
+    "以下の点を考慮して計画を作成してください：",
+    "・苦手科目には時間を多めに配分し、得意科目は効率的に進める",
+    "・学習者の過去の会話メモリから、目標・得意不得意・感想・希望を踏まえて個別化する",
+    "・休みの取り方や勉強できる曜日に合わせて調整する",
+    "・毎日同じ配分ではなく、曜日や進捗に応じて変化を持たせる",
+    "",
     "次の形式のJSONだけを出力してください。説明文やコードブロックは不要です。",
-    '{"title": "計画名", "advice": "全体へのアドバイス（100文字以内）", "days": [{"date": "YYYY-MM-DD", "tasks": [{"subject": "科目名", "targetMinutes": 数値}]}]}',
+    '{"title": "計画名", "advice": "全体へのアドバイス（150文字以内・学習者の状況を踏まえた個別化的な内容）", "days": [{"date": "YYYY-MM-DD", "tasks": [{"subject": "科目名", "targetMinutes": 数値}]}]}',
     "・subject は対象科目の名前のみを使う",
     "・targetMinutes は5〜240の整数",
     "・1日あたりの合計が学習時間の目安に近くなるように配分する",
     "・期間内の日付だけを使う",
+    "・休みの日や勉強できない曜日はタスクを空にするか少なめにする",
   );
   return lines.join("\n");
 }
@@ -142,7 +209,8 @@ function sanitizePlan(raw: unknown, req: PlanRequest): GeneratedPlan {
       tasks.push({ subject: t.subject, targetMinutes: minutes });
       if (tasks.length >= MAX_TASKS_PER_DAY) break;
     }
-    if (tasks.length > 0) byDate.set(day.date, { date: day.date, tasks });
+    // Allow days with 0 tasks (rest days)
+    byDate.set(day.date, { date: day.date, tasks });
   }
 
   const days = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -150,7 +218,7 @@ function sanitizePlan(raw: unknown, req: PlanRequest): GeneratedPlan {
 
   return {
     title: typeof r.title === "string" && r.title.trim() ? r.title.trim().slice(0, 50) : "学習計画",
-    advice: typeof r.advice === "string" ? r.advice.slice(0, 200) : "",
+    advice: typeof r.advice === "string" ? r.advice.slice(0, 300) : "",
     days,
   };
 }
@@ -166,7 +234,7 @@ async function generateWithClaude(apiKey: string, req: PlanRequest): Promise<Gen
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4000,
-      system: "あなたは学習計画を作成する日本語のアシスタントです。指定された形式のJSONだけを返します。",
+      system: "あなたは学習計画を作成する日本語のアシスタントです。学習者の過去の会話メモリや詳細な条件を踏まえて、一人ひとりに合わせた計画を作成します。指定された形式のJSONだけを返します。",
       messages: [{ role: "user", content: buildPrompt(req) }],
     }),
   });

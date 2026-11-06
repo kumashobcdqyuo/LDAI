@@ -1,8 +1,14 @@
 import { useState } from 'react';
-import { X, Loader2, Sparkles, ArrowLeft, CalendarCheck } from 'lucide-react';
+import { X, Loader2, Sparkles, ArrowLeft, CalendarCheck, ChevronDown, Brain } from 'lucide-react';
 import { addDays, formatDateJa, todayStr } from '@/lib/dateUtils';
 import { formatHours } from '@/lib/stats';
-import { generateStudyPlan, GeneratedPlan, PlanRequestInput } from '@/lib/generateStudyPlan';
+import {
+  generateStudyPlan,
+  fetchChatMemories,
+  GeneratedPlan,
+  PlanRequestInput,
+  ChatMemory,
+} from '@/lib/generateStudyPlan';
 
 interface AiPlanModalProps {
   subjects: string[];
@@ -12,6 +18,9 @@ interface AiPlanModalProps {
 
 const MAX_DAYS = 90;
 const DAILY_OPTIONS = [30, 60, 90, 120, 150, 180];
+const WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'];
+const LEVEL_OPTIONS = ['初心者', '基礎レベル', '中級レベル', '上級レベル'];
+const STYLE_OPTIONS = ['テキスト中心', '問題演習中心', '動画・講義中心', '混合'];
 
 const inputClass =
   'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent';
@@ -33,12 +42,28 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Detailed conditions
+  const [showDetails, setShowDetails] = useState(false);
+  const [level, setLevel] = useState('');
+  const [weakSubjects, setWeakSubjects] = useState<string[]>([]);
+  const [strongSubjects, setStrongSubjects] = useState<string[]>([]);
+  const [studyStyle, setStudyStyle] = useState('');
+  const [availableDays, setAvailableDays] = useState<string[]>([]);
+  const [restDayPattern, setRestDayPattern] = useState('');
+  const [priority, setPriority] = useState('');
+  const [notes, setNotes] = useState('');
+  const [usedMemories, setUsedMemories] = useState(false);
+
   const period = daysBetween(startDate, endDate);
 
   const toggleSubject = (name: string) => {
     setSelectedSubjects((prev) =>
       prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name],
     );
+  };
+
+  const toggleArrayItem = (arr: string[], value: string, setter: (v: string[]) => void) => {
+    setter(arr.includes(value) ? arr.filter((s) => s !== value) : [...arr, value]);
   };
 
   const formError = (): string | null => {
@@ -58,6 +83,10 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
     setBusy(true);
     setError(null);
     try {
+      let memories: ChatMemory[] = [];
+      if (showDetails) {
+        memories = await fetchChatMemories();
+      }
       const result = await generateStudyPlan({
         goal: goal.trim(),
         startDate,
@@ -65,9 +94,19 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
         dailyMinutes,
         subjects: selectedSubjects,
         ...extra,
+        level: level || undefined,
+        weakSubjects: weakSubjects.length > 0 ? weakSubjects : undefined,
+        strongSubjects: strongSubjects.length > 0 ? strongSubjects : undefined,
+        studyStyle: studyStyle || undefined,
+        availableDays: availableDays.length > 0 ? availableDays : undefined,
+        restDayPattern: restDayPattern || undefined,
+        priority: priority.trim() || undefined,
+        notes: notes.trim() || undefined,
+        memories: memories.length > 0 ? memories : undefined,
       });
       setPlan(result.plan);
       setUsedAi(result.source === 'ai');
+      setUsedMemories(memories.length > 0);
       setFeedback('');
       setStep('preview');
     } catch (err) {
@@ -192,6 +231,168 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
               )}
             </div>
 
+            {/* Detailed conditions toggle */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setShowDetails(!showDetails)}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Brain className="w-4 h-4 text-teal-500" />
+                  詳細条件を指定する（より精度の高い計画）
+                </span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showDetails && (
+                <div className="p-4 space-y-4 border-t border-gray-100 bg-gray-50/50">
+                  {/* Level */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">現在のレベル</label>
+                    <div className="flex flex-wrap gap-2">
+                      {LEVEL_OPTIONS.map((l) => (
+                        <button
+                          key={l}
+                          onClick={() => setLevel(level === l ? '' : l)}
+                          className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                            level === l
+                              ? 'bg-sky-50 border-sky-400 text-sky-700'
+                              : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Weak / Strong subjects */}
+                  {selectedSubjects.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1.5">苦手な科目</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedSubjects.map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => toggleArrayItem(weakSubjects, s, setWeakSubjects)}
+                              className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                                weakSubjects.includes(s)
+                                  ? 'bg-orange-50 border-orange-400 text-orange-700'
+                                  : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                              }`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1.5">得意な科目</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedSubjects.map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => toggleArrayItem(strongSubjects, s, setStrongSubjects)}
+                              className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                                strongSubjects.includes(s)
+                                  ? 'bg-green-50 border-green-400 text-green-700'
+                                  : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                              }`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Study style */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">学習スタイル</label>
+                    <div className="flex flex-wrap gap-2">
+                      {STYLE_OPTIONS.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setStudyStyle(studyStyle === s ? '' : s)}
+                          className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                            studyStyle === s
+                              ? 'bg-sky-50 border-sky-400 text-sky-700'
+                              : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Available days */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">勉強できる曜日</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {WEEKDAYS.map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => toggleArrayItem(availableDays, d, setAvailableDays)}
+                          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                            availableDays.includes(d)
+                              ? 'bg-teal-50 border-teal-400 text-teal-700'
+                              : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                          }`}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Rest day pattern */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">休みの取り方（任意）</label>
+                    <input
+                      value={restDayPattern}
+                      onChange={(e) => setRestDayPattern(e.target.value)}
+                      maxLength={100}
+                      placeholder="例: 日曜は完全休業、土曜は半日"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {/* Priority */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">優先したいこと（任意）</label>
+                    <input
+                      value={priority}
+                      onChange={(e) => setPriority(e.target.value)}
+                      maxLength={200}
+                      placeholder="例: 数学の過去問を多くこなす"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">その他の要望（任意）</label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      maxLength={500}
+                      placeholder="例: 平日は夜しかできない、模試が2週間後にある など"
+                      rows={3}
+                      className={inputClass + ' resize-none'}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-teal-600 bg-teal-50 rounded-lg px-3 py-2">
+                    <Brain className="w-3.5 h-3.5 shrink-0" />
+                    AIチャットの過去の会話から学習状況を参照して、より個人的な計画を作成します。
+                  </div>
+                </div>
+              )}
+            </div>
+
             {error && <p className="text-sm text-red-500">{error}</p>}
 
             <button
@@ -213,6 +414,7 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
                   <p className="text-xs text-gray-400 mt-2">
                     {plan.days.length}日分・合計 {formatHours(totalMinutes)}
                     {!usedAi && '（AIが使えないため基本プランで作成しました）'}
+                    {usedAi && usedMemories && '・過去の会話メモリを参照'}
                   </p>
                 </div>
 
@@ -220,13 +422,17 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
                   {plan.days.map((d) => (
                     <div key={d.date} className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-700 mb-2">{formatDateJa(d.date)}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {d.tasks.map((t, i) => (
-                          <span key={`${d.date}-${i}`} className="text-xs bg-gray-50 text-gray-600 rounded-full px-2.5 py-1">
-                            {t.subject} {t.targetMinutes}分
-                          </span>
-                        ))}
-                      </div>
+                      {d.tasks.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {d.tasks.map((t, i) => (
+                            <span key={`${d.date}-${i}`} className="text-xs bg-gray-50 text-gray-600 rounded-full px-2.5 py-1">
+                              {t.subject} {t.targetMinutes}分
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">休みの日</span>
+                      )}
                     </div>
                   ))}
                 </div>
