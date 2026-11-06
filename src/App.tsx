@@ -28,6 +28,7 @@ import {
   formatHours,
   subjectBreakdown,
   chartDataForPeriod,
+  chartDataBySubject,
   filterByPeriod,
   PERIOD_OPTIONS,
   Period,
@@ -91,7 +92,8 @@ function App() {
   const monthMins = minutesThisMonth(myRecords);
   const streak = streakDays(myRecords);
   const periodRecords = filterByPeriod(myRecords, period);
-  const chartData = chartDataForPeriod(myRecords, period);
+  const chartSubjects = subjectBreakdown(periodRecords).map((s) => s.subject);
+  const chartData = chartDataBySubject(myRecords, period, chartSubjects);
   const subjectData = subjectBreakdown(periodRecords);
   const periodTotal = periodRecords.reduce((s, r) => s + r.minutes, 0);
   const periodLabel = PERIOD_OPTIONS.find((o) => o.value === period)?.label ?? '';
@@ -361,7 +363,7 @@ function App() {
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <DailyBarChart data={chartData} title={`${periodLabel}の学習時間`} />
+              <DailyBarChart data={chartData} title={`${periodLabel}の学習時間`} subjects={chartSubjects} />
               <SubjectPieChart data={subjectData} />
             </div>
           </div>
@@ -393,6 +395,7 @@ function App() {
             onCreatePlan={createPlan}
             onToggleTask={handleToggleTask}
             onAddTask={addPlanTask}
+            onSetTaskSchedule={setTaskSchedule}
             onDeletePlan={deletePlan}
           />
         ) : tab === 'community' ? (

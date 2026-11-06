@@ -3,15 +3,15 @@
   "functions": {
     "chat-ai": {
       "hasChanged": false,
-      "hash": "c338934ba6c7a46f2b4a717ac1edc8cbcd5db8bb5128f0fab490dd57bcee7aa3"
-    },
-    "get-advice": {
-      "hasChanged": false,
-      "hash": "e35f496c30fee37ee2f2d431c6986900ac11abb99f2ad100c1c8ab13738678ae"
+      "hash": "0aecbc54412c59fcf618a18538b676ee44f5948ca2a18c1a8ba1e4c1e979c2c8"
     },
     "generate-study-plan": {
       "hasChanged": false,
       "hash": "508262f6b8eea4c8c0a730616454736f2aa16a7691065080e0b3b4b310ccb87a"
+    },
+    "get-advice": {
+      "hasChanged": false,
+      "hash": "e35f496c30fee37ee2f2d431c6986900ac11abb99f2ad100c1c8ab13738678ae"
     }
   }
 }

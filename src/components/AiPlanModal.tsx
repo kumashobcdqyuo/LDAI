@@ -26,7 +26,7 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
   const [startDate, setStartDate] = useState(todayStr());
   const [endDate, setEndDate] = useState(addDays(todayStr(), 6));
   const [dailyMinutes, setDailyMinutes] = useState(60);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(subjects);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [plan, setPlan] = useState<GeneratedPlan | null>(null);
   const [usedAi, setUsedAi] = useState(false);
   const [feedback, setFeedback] = useState('');

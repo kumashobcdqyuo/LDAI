@@ -31,17 +31,23 @@ interface PlanInput {
   tasks: PlanTaskInput[];
 }
 
+interface MemoryInput {
+  role: string;
+  content: string;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    const { messages, records, userName, plans } = await req.json() as {
+    const { messages, records, userName, plans, memories } = await req.json() as {
       messages: ChatMessage[];
       records?: StudyRecordInput[];
       userName?: string;
       plans?: PlanInput[];
+      memories?: MemoryInput[];
     };
 
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -88,17 +94,30 @@ Deno.serve(async (req: Request) => {
 ${recentMemos}`;
     }
 
+    // Build memory summary from past conversations
+    let memorySummary = "";
+    if (memories && memories.length > 0) {
+      const recentMemories = memories.slice(-20);
+      memorySummary = "\n\n過去の会話メモリ（直近のやり取り）:\n" +
+        recentMemories
+          .map((m) => `${m.role === "user" ? "学習者" : "AI"}: ${m.content.slice(0, 200)}`)
+          .join("\n");
+    }
+
     const systemPrompt = `あなたは学習サポートのAIアドバイザーです。学習者のデータをもとに、親身で励みになるアドバイスを日本語で提供します。
 
 以下の学習データを参考にしながら、ユーザーの質問や相談に答えてください。
 
 ${contextSummary}
-${buildPlanSummary(plans)}
+${buildPlanSummary(plans)}${memorySummary}
 
 あなたは以下の役割をすべて担います：
 
 1. 学習計画の相談
    - 勉強スケジュールの作成、科目の優先順位、時間配分の提案
+   - 学習者の目標や状況を詳しく聞き出すために、追加の質問を積極的に行う
+   - 一度の回答で完成させるのではなく、目標・期限・現在のレベル・1日に使える時間・得意不得意などを質問してから、それに合わせた計画を提案する
+   - 計画を作成する際は、過去の会話メモリから学習者の状況や希望を踏まえて提案する
 
 2. 学習データの分析とアドバイス
    - 学習ペース、科目バランス、継続状況の分析と改善提案
@@ -117,16 +136,18 @@ ${buildPlanSummary(plans)}
 
 回答のポイント:
 - ユーザーの質問内容に直接答える
-- 学習データを踏まえた具体的なアドバイスをする
+- 学習データと過去の会話メモリを踏まえた具体的なアドバイスをする
+- 計画の相談では、情報が足りない場合は必ず追加質問をしてから提案する
 - 分かりやすい日本語で、必要に応じて箇条書きや段階的な説明を使う
 - 簡潔すぎず、十分な説明を含める（最大800文字）
 - 問題の解答・解説を求められた場合は、丁寧なステップ解説を心がける
-- 励ましと具体的な提案を含める`;
+- 励ましと具体的な提案を含める
+- 過去の会話で学習者が話した希望や状況を覚えており、それを踏まえて回答する`;
 
     if (!claudeKey) {
       // Fallback: rule-based responses when no API key
       const lastUserMsg = messages[messages.length - 1]?.content ?? "";
-      const fallback = getFallbackResponse(lastUserMsg, records ?? [], plans ?? []);
+      const fallback = getFallbackResponse(lastUserMsg, records ?? [], plans ?? [], memories ?? []);
       return new Response(
         JSON.stringify({ reply: fallback }),
         {
@@ -164,6 +185,7 @@ ${buildPlanSummary(plans)}
         messages[messages.length - 1]?.content ?? "",
         records ?? [],
         plans ?? [],
+        memories ?? [],
       );
       return new Response(
         JSON.stringify({ reply: fallback }),
@@ -263,11 +285,13 @@ function getFallbackResponse(
   userMessage: string,
   records: StudyRecordInput[],
   plans: PlanInput[] = [],
+  memories: MemoryInput[] = [],
 ): string {
   const msg = userMessage.trim();
   const lower = msg.toLowerCase();
   const hasRecords = records.length > 0;
   const hasPlans = plans.length > 0;
+  const hasMemories = memories.length > 0;
 
   // Detect a problem/question being submitted — look for math expressions, question marks, or problem-like patterns
   if (/\d+\s*[+\-*/×÷]\s*\d+/.test(msg) || /計算|解いて|答え|解説|問題/.test(msg)) {
@@ -279,8 +303,18 @@ function getFallbackResponse(
     return "英語に関するご質問ですね。申し訳ありませんが、現在AIの応答システムが制限モードで動作しています。\n\n翻訳や文法の解説など、より詳細な回答を行うには、AI機能の有効化が必要です。それでも基本的なことならお手伝いできるので、具体的な英文や質問をもう少し詳しく教えてください！";
   }
 
-  // Study schedule / plan
+  // Study schedule / plan — ask follow-up questions for better planning
   if (/計画|スケジュール|計画表|いつ|何時間|どのくらい|時間配分|進捗|進ちょく/.test(msg)) {
+    let memoryHint = "";
+    if (hasMemories) {
+      const userMemories = memories.filter((m) => m.role === "user").slice(-5);
+      if (userMemories.length > 0) {
+        memoryHint = "\n\n以前の会話で以下のことをお聞きしました：\n" +
+          userMemories.map((m) => `・${m.content.slice(0, 80)}`).join("\n") +
+          "\nこれを踏まえて提案します。";
+      }
+    }
+
     if (hasPlans) {
       const planSummaries = plans.map((p) => {
         const done = p.tasks.filter((t) => t.done).length;
@@ -289,7 +323,7 @@ function getFallbackResponse(
         const taskList = p.tasks.map((t) => `  ・${t.subject} ${t.targetMinutes}分 [${t.done ? "完了" : "未完了"}]`).join("\n");
         return `【${p.title}】${pct}%完了 (${done}/${total})\n目標: ${p.goal ?? "未設定"}\n期間: ${p.startDate}〜${p.endDate ?? "未定"}\nタスク:\n${taskList}`;
       }).join("\n\n");
-      return `学習計画についてですね！現在の計画状況は以下の通りです：\n\n${planSummaries}\n\n${hasRecords ? "直近2週間の学習記録と照らし合わせて、計画の進捗を確認できます。" : "学習記録を追加すると、計画と実際の学習のギャップも確認できます。"}\n\nより詳細なアドバイスにはAI機能の有効化が必要です。有効化すると、計画に対する個別の改善提案や学習スケジュールの調整が可能になります。`;
+      return `学習計画についてですね！${memoryHint}\n\n現在の計画状況は以下の通りです：\n\n${planSummaries}\n\n${hasRecords ? "直近2週間の学習記録と照らし合わせて、計画の進捗を確認できます。" : "学習記録を追加すると、計画と実際の学習のギャップも確認できます。"}\n\nより精度の高い計画を立てるために、以下を教えてください：\n1. テストや目標の期限はいつですか？\n2. 1日にどれくらい勉強できそうですか？\n3. 特に得意な科目・苦手な科目はありますか？\n\nこれらに答えていただければ、より良い計画をご提案できます！`;
     }
     if (hasRecords) {
       const total = records.reduce((s, r) => s + r.minutes, 0);
@@ -299,9 +333,9 @@ function getFallbackResponse(
       }
       const subjects = Array.from(subjectMap.entries()).sort((a, b) => b[1] - a[1]);
       const topSubject = subjects[0]?.[0] ?? "";
-      return `学習計画のご相談ですね！\n\n直近2週間のデータを見ると、合計${total}分学習しています。最も多く学習している科目は「${topSubject}」です。\n\nおすすめのアプローチ：\n1. 得意科目と苦手科目を交互に配置する\n2. 1回の学習は25〜50分で区切る（ポモドーロ技法）\n3.週末に復習の時間を確保する\n\nより詳細な計画の提案には、AI機能の有効化が必要です。お使いの環境でAI機能を有効にすると、あなたの学習データに合わせた個別のスケジュール提案を受けられます。`;
+      return `学習計画のご相談ですね！${memoryHint}\n\n直近2週間のデータを見ると、合計${total}分学習しています。最も多く学習している科目は「${topSubject}」です。\n\nより良い計画を立てるために、いくつか質問させてください：\n1. 目標は何ですか？（テスト、資格、趣味など）\n2. 期限はいつですか？\n3. 1日にどれくらい時間を取れそうですか？\n4. 得意・苦手な科目を教えてください\n\nこれらに答えていただければ、あなたに合わせた計画をご提案します！`;
     }
-    return "学習計画のご相談ですね！\n\nまずは学習記録を追加して、自分の学習パターンを可視化してみましょう。データがたまると、より精度の高い計画が立てられます。\n\n基本的なポイント：\n1. 1回の学習は25〜50分で区切る\n2. 科目をローテーションして飽きを防ぐ\n3. 週に1回は復習の時間を確保する\n\nより詳細な提案にはAI機能の有効化が必要です。";
+    return `学習計画のご相談ですね！${memoryHint}\n\nより良い計画をご提案するために、以下を教えてください：\n1. 目標は何ですか？（例: テストで80点以上、資格試験合格など）\n2. 期限はいつですか？\n3. 1日にどれくらい勉強できそうですか？\n4. 取り組みたい科目は何ですか？\n5. 特に得意・苦手な科目はありますか？\n\nこれらに答えていただければ、あなたに合わせた学習計画をご提案します！`;
   }
 
   // Motivation

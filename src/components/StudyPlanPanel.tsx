@@ -27,6 +27,7 @@ interface StudyPlanPanelProps {
   }) => Promise<{ error: string | null }>;
   onToggleTask: (planId: string, taskId: string) => Promise<{ error: string | null }>;
   onAddTask: (planId: string, subject: string, targetMinutes: number) => Promise<{ error: string | null }>;
+  onSetTaskSchedule: (planId: string, taskId: string, scheduledDate: string | null) => Promise<{ error: string | null }>;
   onDeletePlan: (planId: string) => Promise<{ error: string | null }>;
 }
 
@@ -36,6 +37,7 @@ export function StudyPlanPanel({
   onCreatePlan,
   onToggleTask,
   onAddTask,
+  onSetTaskSchedule,
   onDeletePlan,
 }: StudyPlanPanelProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -98,6 +100,7 @@ export function StudyPlanPanel({
           subjects={subjects}
           onToggleTask={onToggleTask}
           onAddTask={onAddTask}
+          onSetTaskSchedule={onSetTaskSchedule}
           onDeletePlan={onDeletePlan}
         />
       ))}
@@ -110,12 +113,14 @@ function PlanCard({
   subjects,
   onToggleTask,
   onAddTask,
+  onSetTaskSchedule,
   onDeletePlan,
 }: {
   plan: StudyPlan;
   subjects: string[];
   onToggleTask: (planId: string, taskId: string) => Promise<{ error: string | null }>;
   onAddTask: (planId: string, subject: string, targetMinutes: number) => Promise<{ error: string | null }>;
+  onSetTaskSchedule: (planId: string, taskId: string, scheduledDate: string | null) => Promise<{ error: string | null }>;
   onDeletePlan: (planId: string) => Promise<{ error: string | null }>;
 }) {
   const [showAddTask, setShowAddTask] = useState(false);
@@ -207,6 +212,7 @@ function PlanCard({
             key={task.id}
             task={task}
             onToggle={() => onToggleTask(plan.id, task.id)}
+            onSetSchedule={(date) => onSetTaskSchedule(plan.id, task.id, date)}
           />
         ))}
 
@@ -272,11 +278,14 @@ function PlanCard({
 function TaskRowItem({
   task,
   onToggle,
+  onSetSchedule,
 }: {
   task: StudyPlanTask;
   onToggle: () => Promise<{ error: string | null }>;
+  onSetSchedule: (date: string | null) => Promise<{ error: string | null }>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
 
   const handleToggle = async () => {
     setBusy(true);
@@ -284,34 +293,65 @@ function TaskRowItem({
     setBusy(false);
   };
 
+  const handleScheduleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setScheduleBusy(true);
+    await onSetSchedule(e.target.value || null);
+    setScheduleBusy(false);
+  };
+
   return (
-    <button
-      onClick={handleToggle}
-      disabled={busy}
-      className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+    <div
+      className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
         task.done ? 'bg-teal-50' : 'bg-gray-50 hover:bg-gray-100'
       }`}
     >
-      {busy ? (
-        <Loader2 className="w-4 h-4 text-gray-400 animate-spin shrink-0" />
-      ) : task.done ? (
-        <CheckCircle className="w-4 h-4 text-teal-600 shrink-0" />
-      ) : (
-        <Circle className="w-4 h-4 text-gray-300 shrink-0" />
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <BookOpen className="w-3 h-3 text-gray-400" />
-          <span className={`text-sm font-medium ${task.done ? 'text-teal-700 line-through' : 'text-gray-700'}`}>
-            {task.subject}
-          </span>
+      <button
+        onClick={handleToggle}
+        disabled={busy || scheduleBusy}
+        className="flex items-center gap-3 flex-1 min-w-0 text-left"
+      >
+        {busy ? (
+          <Loader2 className="w-4 h-4 text-gray-400 animate-spin shrink-0" />
+        ) : task.done ? (
+          <CheckCircle className="w-4 h-4 text-teal-600 shrink-0" />
+        ) : (
+          <Circle className="w-4 h-4 text-gray-300 shrink-0" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <BookOpen className="w-3 h-3 text-gray-400" />
+            <span className={`text-sm font-medium ${task.done ? 'text-teal-700 line-through' : 'text-gray-700'}`}>
+              {task.subject}
+            </span>
+          </div>
         </div>
+        <span className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
+          <Clock className="w-3 h-3" />
+          {task.targetMinutes}分
+        </span>
+      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        {scheduleBusy && <Loader2 className="w-3 h-3 text-gray-400 animate-spin" />}
+        <input
+          type="date"
+          value={task.scheduledDate ?? ''}
+          onChange={handleScheduleChange}
+          disabled={scheduleBusy}
+          className="text-xs text-gray-500 border border-gray-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-teal-400 w-[130px]"
+          title="カレンダーに表示する日"
+        />
+        {task.scheduledDate && (
+          <button
+            onClick={() => onSetSchedule(null)}
+            disabled={scheduleBusy}
+            className="text-gray-300 hover:text-red-400 transition-colors"
+            title="予定日をクリア"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
-      <span className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
-        <Clock className="w-3 h-3" />
-        {task.targetMinutes}分
-      </span>
-    </button>
+    </div>
   );
 }
 

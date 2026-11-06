@@ -197,6 +197,33 @@ export function subjectBreakdown(
     .sort((a, b) => b.minutes - a.minutes);
 }
 
+/** Daily chart data with per-subject breakdown for stacked bars.
+ *  Returns one entry per day with { date, label, minutes, [subject]: minutes }.
+ *  `subjects` controls which subject keys are included (even if 0 for a day). */
+export function chartDataBySubject(
+  records: StudyRecord[],
+  period: Period,
+  subjects: string[],
+): { date: string; label: string; minutes: number; [subject: string]: string | number }[] {
+  const base = chartDataForPeriod(records, period);
+  const filtered = filterByPeriod(records, period);
+
+  return base.map((day) => {
+    const dayRecords = filtered.filter((r) => r.date === day.date);
+    const entry: { date: string; label: string; minutes: number; [subject: string]: string | number } = {
+      date: day.date,
+      label: day.label,
+      minutes: day.minutes,
+    };
+    for (const subject of subjects) {
+      entry[subject] = dayRecords
+        .filter((r) => r.subject === subject)
+        .reduce((sum, r) => sum + r.minutes, 0);
+    }
+    return entry;
+  });
+}
+
 /** Days since the most recent study session */
 export function daysSinceLastStudy(records: StudyRecord[]): number {
   if (records.length === 0) return 999;
