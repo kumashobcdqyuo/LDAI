@@ -11,6 +11,7 @@ import {
   Clock,
   X,
   Check,
+  MessageSquare,
 } from 'lucide-react';
 import { StudyPlan, StudyPlanTask } from '@/lib/types';
 import { todayStr } from '@/lib/dateUtils';
@@ -29,6 +30,7 @@ interface StudyPlanPanelProps {
   onAddTask: (planId: string, subject: string, targetMinutes: number) => Promise<{ error: string | null }>;
   onSetTaskSchedule: (planId: string, taskId: string, scheduledDate: string | null) => Promise<{ error: string | null }>;
   onDeletePlan: (planId: string) => Promise<{ error: string | null }>;
+  onFeedback?: (plan: StudyPlan) => void;
 }
 
 export function StudyPlanPanel({
@@ -39,6 +41,7 @@ export function StudyPlanPanel({
   onAddTask,
   onSetTaskSchedule,
   onDeletePlan,
+  onFeedback,
 }: StudyPlanPanelProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
 
@@ -102,6 +105,7 @@ export function StudyPlanPanel({
           onAddTask={onAddTask}
           onSetTaskSchedule={onSetTaskSchedule}
           onDeletePlan={onDeletePlan}
+          onFeedback={onFeedback}
         />
       ))}
     </div>
@@ -115,6 +119,7 @@ function PlanCard({
   onAddTask,
   onSetTaskSchedule,
   onDeletePlan,
+  onFeedback,
 }: {
   plan: StudyPlan;
   subjects: string[];
@@ -122,6 +127,7 @@ function PlanCard({
   onAddTask: (planId: string, subject: string, targetMinutes: number) => Promise<{ error: string | null }>;
   onSetTaskSchedule: (planId: string, taskId: string, scheduledDate: string | null) => Promise<{ error: string | null }>;
   onDeletePlan: (planId: string) => Promise<{ error: string | null }>;
+  onFeedback?: (plan: StudyPlan) => void;
 }) {
   const [showAddTask, setShowAddTask] = useState(false);
   const [newSubject, setNewSubject] = useState(subjects[0] ?? '');
@@ -259,18 +265,29 @@ function PlanCard({
 
       {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
 
-      {!showAddTask && (
-        <button
-          onClick={() => {
-            setNewSubject(subjects[0] ?? '');
-            setShowAddTask(true);
-          }}
-          className="mt-3 inline-flex items-center gap-1 text-sm text-teal-600 font-medium hover:text-teal-700 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          タスクを追加
-        </button>
-      )}
+      <div className="flex items-center gap-3 mt-3">
+        {!showAddTask && (
+          <button
+            onClick={() => {
+              setNewSubject(subjects[0] ?? '');
+              setShowAddTask(true);
+            }}
+            className="inline-flex items-center gap-1 text-sm text-teal-600 font-medium hover:text-teal-700 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            タスクを追加
+          </button>
+        )}
+        {onFeedback && (
+          <button
+            onClick={() => onFeedback(plan)}
+            className="inline-flex items-center gap-1 text-sm text-sky-600 font-medium hover:text-sky-700 transition-colors ml-auto"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            AIにフィードバックを求める
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -35,6 +35,7 @@ import {
 } from '@/lib/stats';
 import { getAdvice, AdviceResult } from '@/lib/getAdvice';
 import { GeneratedPlan } from '@/lib/generateStudyPlan';
+import { StudyPlan } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useStudyData } from '@/lib/useStudyData';
 import { useStudyPlans } from '@/lib/useStudyPlans';
@@ -87,6 +88,7 @@ function App() {
   const [period, setPeriod] = useState<Period>('14days');
   const [showQuickStudy, setShowQuickStudy] = useState(false);
   const [showAiPlan, setShowAiPlan] = useState(false);
+  const [chatPrompt, setChatPrompt] = useState<string | null>(null);
 
   const weekMins = minutesThisWeek(myRecords);
   const monthMins = minutesThisMonth(myRecords);
@@ -397,11 +399,22 @@ function App() {
             onAddTask={addPlanTask}
             onSetTaskSchedule={setTaskSchedule}
             onDeletePlan={deletePlan}
+            onFeedback={(plan: StudyPlan) => {
+              const taskList = plan.tasks.map((t) => `${t.subject} ${t.targetMinutes}分`).join(', ');
+              setChatPrompt(`学習計画「${plan.title}」のフィードバックをお願いします。\n目標: ${plan.goal ?? '未設定'}\n期間: ${plan.startDate}〜${plan.endDate ?? '未定'}\nタスク: ${taskList}\n進捗: ${plan.tasks.filter((t) => t.done).length}/${plan.tasks.length}完了\n\n現在のペース、学習時間、感想を踏まえて、計画の改善やアドバイスをお願いします。`);
+              setTab('chat');
+            }}
           />
         ) : tab === 'community' ? (
           <CommunityRanking users={users} />
         ) : (
-          <ChatPanel records={myRecords} userName={profile?.name} plans={plans} />
+          <ChatPanel
+            records={myRecords}
+            userName={profile?.name}
+            plans={plans}
+            initialPrompt={chatPrompt}
+            onConsumePrompt={() => setChatPrompt(null)}
+          />
         )}
       </main>
 
