@@ -36,18 +36,25 @@ interface MemoryInput {
   content: string;
 }
 
+interface FeedbackInput {
+  rating: string;
+  request: string | null;
+  messageContent: string;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    const { messages, records, userName, plans, memories } = await req.json() as {
+    const { messages, records, userName, plans, memories, feedbackMemories } = await req.json() as {
       messages: ChatMessage[];
       records?: StudyRecordInput[];
       userName?: string;
       plans?: PlanInput[];
       memories?: MemoryInput[];
+      feedbackMemories?: FeedbackInput[];
     };
 
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -104,12 +111,26 @@ ${recentMemos}`;
           .join("\n");
     }
 
+    // Build feedback summary from user's past ratings and improvement requests
+    let feedbackSummary = "";
+    if (feedbackMemories && feedbackMemories.length > 0) {
+      const recent = feedbackMemories.slice(-15);
+      feedbackSummary = "\n\n過去のチャットフィードバック（学習者からの評価と要望）:\n" +
+        recent
+          .map((f) => {
+            const rating = f.rating === "good" ? "良い評価" : "改善希望";
+            const req = f.request ? `（要望: ${f.request.slice(0, 150)}）` : "";
+            return `・[${rating}] ${f.messageContent.slice(0, 100)}${req}`;
+          })
+          .join("\n");
+    }
+
     const systemPrompt = `あなたは学習サポートのAIアドバイザーです。学習者のデータと過去の会話メモリをもとに、一人ひとりに合わせた親身で励みになるアドバイスを日本語で提供します。
 
 以下の学習データと過去のメモリを参考にしながら、ユーザーの質問や相談に答えてください。
 
 ${contextSummary}
-${buildPlanSummary(plans)}${memorySummary}
+${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
 
 あなたは以下の役割をすべて担います：
 
@@ -147,6 +168,7 @@ ${buildPlanSummary(plans)}${memorySummary}
 - 学習データと過去の会話メモリを踏まえた具体的なアドバイスをする
 - 計画の相談では、情報が足りない場合は必ず追加質問をしてから提案する
 - 過去の会話で学習者が話した希望、目標、得意不得意、感想を覚えており、それを踏まえて回答する
+- 過去のフィードバック（良い評価・改善希望）を踏まえ、学習者が不満に思った点や要望を改善する
 - 同じ質問を繰り返さず、すでに聞いた情報はメモリから活用する
 - 分かりやすい日本語で、必要に応じて箇条書きや段階的な説明を使う
 - 簡潔すぎず、十分な説明を含める（最大800文字）
@@ -155,7 +177,7 @@ ${buildPlanSummary(plans)}${memorySummary}
 
     if (!claudeKey) {
       const lastUserMsg = messages[messages.length - 1]?.content ?? "";
-      const fallback = getFallbackResponse(lastUserMsg, records ?? [], plans ?? [], memories ?? []);
+      const fallback = getFallbackResponse(lastUserMsg, records ?? [], plans ?? [], memories ?? [], feedbackMemories ?? []);
       return new Response(
         JSON.stringify({ reply: fallback }),
         {
@@ -193,6 +215,7 @@ ${buildPlanSummary(plans)}${memorySummary}
         records ?? [],
         plans ?? [],
         memories ?? [],
+        feedbackMemories ?? [],
       );
       return new Response(
         JSON.stringify({ reply: fallback }),
@@ -300,13 +323,18 @@ function getFallbackResponse(
   records: StudyRecordInput[],
   plans: PlanInput[] = [],
   memories: MemoryInput[] = [],
+  feedbackMemories: FeedbackInput[] = [],
 ): string {
   const msg = userMessage.trim();
   const lower = msg.toLowerCase();
   const hasRecords = records.length > 0;
   const hasPlans = plans.length > 0;
   const hasMemories = memories.length > 0;
+  const hasFeedback = feedbackMemories.length > 0;
   const memoryHint = hasMemories ? buildMemorySummary(memories) : "";
+  const feedbackHint = hasFeedback
+    ? "過去のフィードバック:\n" + feedbackMemories.slice(-5).map((f) => `・[${f.rating === "good" ? "良い" : "改善希望"}] ${f.request ? f.request.slice(0, 80) : ""}`).join("\n")
+    : "";
 
   // Feedback request
   if (/フィードバック|感想|どう感じ|ペース.*どう|時間.*どう|改善|調整して/.test(msg)) {

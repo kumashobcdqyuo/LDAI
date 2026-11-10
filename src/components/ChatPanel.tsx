@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X, ThumbsUp, ThumbsDown, ChevronDown, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { StudyRecord, StudyPlan } from '@/lib/types';
 
@@ -13,6 +13,11 @@ interface Conversation {
   title: string;
   created_at: string;
   updated_at: string;
+}
+
+interface MessageFeedback {
+  rating: 'good' | 'bad';
+  request: string | null;
 }
 
 interface ChatPanelProps {
@@ -54,6 +59,12 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   const [loaded, setLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Feedback state: map of message index -> feedback
+  const [feedbackMap, setFeedbackMap] = useState<Record<number, MessageFeedback>>({});
+  const [feedbackBusy, setFeedbackBusy] = useState<number | null>(null);
+  const [showRequestFor, setShowRequestFor] = useState<number | null>(null);
+  const [requestInput, setRequestInput] = useState('');
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -106,11 +117,33 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
         content: m.content,
       }));
       setMessages(pastMessages);
+      loadFeedbackForMessages(conversationId, pastMessages);
     } else {
       setMessages([INITIAL_MESSAGE]);
     }
     setLoaded(true);
   }, []);
+
+  const loadFeedbackForMessages = async (conversationId: string, msgs: ChatMessage[]) => {
+    const { data, error } = await supabase
+      .from('chat_feedback')
+      .select('rating, request, message_content')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+
+    if (error || !data) return;
+
+    const newFeedbackMap: Record<number, MessageFeedback> = {};
+    (data as { rating: string; request: string | null; message_content: string }[]).forEach((f) => {
+      for (let i = 0; i < msgs.length; i++) {
+        if (msgs[i].role === 'assistant' && msgs[i].content === f.message_content) {
+          newFeedbackMap[i] = { rating: f.rating as 'good' | 'bad', request: f.request };
+          break;
+        }
+      }
+    });
+    setFeedbackMap(newFeedbackMap);
+  };
 
   useEffect(() => {
     loadConversations();
@@ -132,6 +165,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
     setConversations((prev) => [conv, ...prev]);
     setActiveConversationId(conv.id);
     setMessages([INITIAL_MESSAGE]);
+    setFeedbackMap({});
     return conv.id;
   }, []);
 
@@ -174,6 +208,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
         } else {
           setActiveConversationId(null);
           setMessages([INITIAL_MESSAGE]);
+          setFeedbackMap({});
         }
       }
       return remaining;
@@ -190,6 +225,49 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
     return (data as { role: string; content: string; created_at: string }[])
       .reverse()
       .map((m) => ({ role: m.role, content: m.content }));
+  };
+
+  const fetchAllFeedback = async (): Promise<{ rating: string; request: string | null; messageContent: string }[]> => {
+    const { data, error } = await supabase
+      .from('chat_feedback')
+      .select('rating, request, message_content, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error || !data) return [];
+    return (data as { rating: string; request: string | null; message_content: string; created_at: string }[])
+      .reverse()
+      .map((f) => ({ rating: f.rating, request: f.request, messageContent: f.message_content }));
+  };
+
+  const submitFeedback = async (messageIndex: number, rating: 'good' | 'bad', request?: string) => {
+    if (!activeConversationId) return;
+    const msg = messages[messageIndex];
+    if (!msg || msg.role !== 'assistant') return;
+
+    setFeedbackBusy(messageIndex);
+    try {
+      const { error } = await supabase.from('chat_feedback').insert({
+        conversation_id: activeConversationId,
+        message_role: 'assistant',
+        message_content: msg.content,
+        rating,
+        request: request?.trim() || null,
+      });
+
+      if (error) {
+        console.error('Failed to save feedback:', error.message);
+        return;
+      }
+
+      setFeedbackMap((prev) => ({
+        ...prev,
+        [messageIndex]: { rating, request: request?.trim() || null },
+      }));
+      setShowRequestFor(null);
+      setRequestInput('');
+    } finally {
+      setFeedbackBusy(null);
+    }
   };
 
   const sendMessage = async (text: string) => {
@@ -212,7 +290,6 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
     setInput('');
     setBusy(true);
 
-    // Update title on first real message
     if (isFirstMessage && conversationId) {
       await updateConversationTitle(conversationId, makeTitle(text));
     }
@@ -227,6 +304,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
       const recentRecords = records.filter((r) => r.date >= cutoff);
 
       const memories = await fetchAllMemories();
+      const feedbackMemories = await fetchAllFeedback();
 
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-ai`;
       const response = await fetch(url, {
@@ -256,6 +334,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
             })),
           })),
           memories,
+          feedbackMemories,
         }),
       });
 
@@ -282,7 +361,6 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
     }
   };
 
-  // Handle initial prompt from outside (e.g. plan feedback)
   useEffect(() => {
     if (initialPrompt && loaded && !busy) {
       sendMessage(initialPrompt);
@@ -293,15 +371,19 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   const handleNewChat = () => {
     setActiveConversationId(null);
     setMessages([INITIAL_MESSAGE]);
+    setFeedbackMap({});
     setSidebarOpen(false);
   };
 
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
     setLoaded(false);
+    setFeedbackMap({});
     loadMessages(id);
     setSidebarOpen(false);
   };
+
+  const isInitialMessage = (i: number) => i === 0 && messages[0]?.content === INITIAL_MESSAGE.content;
 
   return (
     <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[400px]">
@@ -426,10 +508,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
           ) : (
             <>
               {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+                <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                   <div
                     className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                       msg.role === 'user'
@@ -439,6 +518,80 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
                   >
                     {msg.content}
                   </div>
+
+                  {/* Feedback buttons for AI messages (skip initial greeting and busy state) */}
+                  {msg.role === 'assistant' && !isInitialMessage(i) && !busy && (
+                    <div className="mt-1.5 max-w-[85%] w-full">
+                      {feedbackMap[i] ? (
+                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                          <span className="flex items-center gap-1">
+                            {feedbackMap[i].rating === 'good' ? (
+                              <><Check className="w-3.5 h-3.5 text-green-500" /> 良いと評価済み</>
+                            ) : (
+                              <><Check className="w-3.5 h-3.5 text-orange-500" /> 改善希望として記録済み</>
+                            )}
+                          </span>
+                          {feedbackMap[i].request && (
+                            <span className="text-gray-400 truncate">「{feedbackMap[i].request}」</span>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => submitFeedback(i, 'good')}
+                              disabled={feedbackBusy === i}
+                              className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg px-2 py-1 transition-colors disabled:opacity-40"
+                            >
+                              <ThumbsUp className="w-3.5 h-3.5" />
+                              良い
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (showRequestFor === i) {
+                                  setShowRequestFor(null);
+                                } else {
+                                  setShowRequestFor(i);
+                                }
+                              }}
+                              disabled={feedbackBusy === i}
+                              className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg px-2 py-1 transition-colors disabled:opacity-40"
+                            >
+                              <ThumbsDown className="w-3.5 h-3.5" />
+                              改善希望
+                            </button>
+                            {feedbackBusy === i && <Loader2 className="w-3.5 h-3.5 text-gray-300 animate-spin" />}
+                          </div>
+
+                          {showRequestFor === i && (
+                            <div className="mt-2 flex gap-1.5">
+                              <input
+                                type="text"
+                                value={requestInput}
+                                onChange={(e) => setRequestInput(e.target.value)}
+                                maxLength={300}
+                                placeholder="どう改善してほしいか教えてください"
+                                className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400 focus:border-transparent"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && requestInput.trim()) {
+                                    submitFeedback(i, 'bad', requestInput);
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => submitFeedback(i, 'bad', requestInput)}
+                                disabled={!requestInput.trim()}
+                                className="shrink-0 text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+                              >
+                                送信
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
 
