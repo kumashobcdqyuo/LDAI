@@ -5,6 +5,7 @@ import { formatHours } from '@/lib/stats';
 import {
   generateStudyPlan,
   fetchChatMemories,
+  fetchChatFeedback,
   GeneratedPlan,
   PlanRequestInput,
   ChatMemory,
@@ -83,10 +84,8 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
     setBusy(true);
     setError(null);
     try {
-      let memories: ChatMemory[] = [];
-      if (showDetails) {
-        memories = await fetchChatMemories();
-      }
+      const memories = await fetchChatMemories();
+      const feedbackMemories = await fetchChatFeedback();
       const result = await generateStudyPlan({
         goal: goal.trim(),
         startDate,
@@ -103,10 +102,11 @@ export function AiPlanModal({ subjects, onClose, onSave }: AiPlanModalProps) {
         priority: priority.trim() || undefined,
         notes: notes.trim() || undefined,
         memories: memories.length > 0 ? memories : undefined,
+        feedbackMemories: feedbackMemories.length > 0 ? feedbackMemories : undefined,
       });
       setPlan(result.plan);
       setUsedAi(result.source === 'ai');
-      setUsedMemories(memories.length > 0);
+      setUsedMemories(memories.length > 0 || feedbackMemories.length > 0);
       setFeedback('');
       setStep('preview');
     } catch (err) {

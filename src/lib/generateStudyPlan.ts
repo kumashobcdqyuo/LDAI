@@ -21,6 +21,12 @@ export interface ChatMemory {
   content: string;
 }
 
+export interface ChatFeedbackEntry {
+  rating: string;
+  request: string | null;
+  messageContent: string;
+}
+
 export interface PlanRequestInput {
   goal: string;
   startDate: string;
@@ -29,7 +35,6 @@ export interface PlanRequestInput {
   subjects: string[];
   feedback?: string;
   previousPlan?: GeneratedPlan;
-  // Detailed conditions
   level?: string;
   weakSubjects?: string[];
   strongSubjects?: string[];
@@ -39,6 +44,7 @@ export interface PlanRequestInput {
   priority?: string;
   notes?: string;
   memories?: ChatMemory[];
+  feedbackMemories?: ChatFeedbackEntry[];
 }
 
 export interface GeneratePlanResult {
@@ -73,6 +79,19 @@ export async function fetchChatMemories(): Promise<ChatMemory[]> {
   return (data as { role: string; content: string; created_at: string }[])
     .reverse()
     .map((m) => ({ role: m.role, content: m.content }));
+}
+
+export async function fetchChatFeedback(): Promise<ChatFeedbackEntry[]> {
+  const { data, error } = await supabase
+    .from('chat_feedback')
+    .select('rating, request, message_content, created_at')
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error || !data) return [];
+  return (data as { rating: string; request: string | null; message_content: string; created_at: string }[])
+    .reverse()
+    .map((f) => ({ rating: f.rating, request: f.request, messageContent: f.message_content }));
 }
 
 export async function generateStudyPlan(input: PlanRequestInput): Promise<GeneratePlanResult> {
