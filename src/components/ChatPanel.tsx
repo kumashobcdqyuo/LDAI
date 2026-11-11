@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X, ThumbsUp, ThumbsDown, ChevronDown, Check } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X, ThumbsUp, ThumbsDown, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { StudyRecord, StudyPlan } from '@/lib/types';
 
