@@ -3,11 +3,11 @@
   "functions": {
     "chat-ai": {
       "hasChanged": false,
-      "hash": "7f4fe645416e2bc0597b9deebd893a2797c460cb34a75e3ca6a44137d4bc1623"
+      "hash": "9b8f99ca9b9368889455f43ff2744a0455f50c5c0bc4e9eb5af64bbffb0e2a78"
     },
     "generate-study-plan": {
       "hasChanged": false,
-      "hash": "df9f4d25fdb13978ea20fe390be88b76f000a6c7d58af4e5de771fb175c7a190"
+      "hash": "83e249e3178a9305b477cf40a832ab9760725ab50e45f7cabc7aecf7621d8f56"
     },
     "get-advice": {
       "hasChanged": false,

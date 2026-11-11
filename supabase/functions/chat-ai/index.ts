@@ -36,10 +36,17 @@ interface MemoryInput {
   content: string;
 }
 
+interface QuestionResponseInput {
+  question: string;
+  answer: string;
+  score?: number;
+}
+
 interface FeedbackInput {
   rating: string;
   request: string | null;
   messageContent: string;
+  questionResponses?: QuestionResponseInput[] | null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -120,7 +127,13 @@ ${recentMemos}`;
           .map((f) => {
             const rating = f.rating === "good" ? "良い評価" : "改善希望";
             const req = f.request ? `（要望: ${f.request.slice(0, 150)}）` : "";
-            return `・[${rating}] ${f.messageContent.slice(0, 100)}${req}`;
+            const responses = f.questionResponses && f.questionResponses.length > 0
+              ? "\n  詳細回答:\n" + f.questionResponses
+                  .filter((r) => r.answer.trim().length > 0)
+                  .map((r) => `    ・${r.question}: ${r.answer}${r.score !== undefined ? ` [スコア${r.score}/5]` : ""}`)
+                  .join("\n")
+              : "";
+            return `・[${rating}] ${f.messageContent.slice(0, 100)}${req}${responses}`;
           })
           .join("\n");
     }
@@ -169,6 +182,7 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
 - 計画の相談では、情報が足りない場合は必ず追加質問をしてから提案する
 - 過去の会話で学習者が話した希望、目標、得意不得意、感想を覚えており、それを踏まえて回答する
 - 過去のフィードバック（良い評価・改善希望）を踏まえ、学習者が不満に思った点や要望を改善する
+- 特に「分かりやすさ」「役立ち度」「自分に合っていたか」の評価スコアと改善要望を重視し、回答の質を向上させる
 - 同じ質問を繰り返さず、すでに聞いた情報はメモリから活用する
 - 分かりやすい日本語で、必要に応じて箇条書きや段階的な説明を使う
 - 簡潔すぎず、十分な説明を含める（最大800文字）
@@ -333,7 +347,13 @@ function getFallbackResponse(
   const hasFeedback = feedbackMemories.length > 0;
   const memoryHint = hasMemories ? buildMemorySummary(memories) : "";
   const feedbackHint = hasFeedback
-    ? "過去のフィードバック:\n" + feedbackMemories.slice(-5).map((f) => `・[${f.rating === "good" ? "良い" : "改善希望"}] ${f.request ? f.request.slice(0, 80) : ""}`).join("\n")
+    ? "過去のフィードバック:\n" + feedbackMemories.slice(-5).map((f) => {
+        const rating = f.rating === "good" ? "良い" : "改善希望";
+        const responses = f.questionResponses && f.questionResponses.length > 0
+          ? "\n  詳細: " + f.questionResponses.filter((r) => r.answer.trim()).map((r) => `${r.question}=${r.answer}`).join(", ")
+          : "";
+        return `・[${rating}] ${f.request ? f.request.slice(0, 80) : ""}${responses}`;
+      }).join("\n")
     : "";
 
   // Feedback request

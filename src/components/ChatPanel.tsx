@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X, ThumbsUp, ThumbsDown, Check } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageCircle, Trash2, Plus, MessageSquare, Clock, X, ThumbsUp, ThumbsDown, Check, MessageSquarePlus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { StudyRecord, StudyPlan } from '@/lib/types';
+import type { QuestionResponse } from '@/lib/generateStudyPlan';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -18,6 +19,7 @@ interface Conversation {
 interface MessageFeedback {
   rating: 'good' | 'bad';
   request: string | null;
+  questionResponses?: QuestionResponse[] | null;
 }
 
 interface ChatPanelProps {
@@ -44,6 +46,65 @@ const QUICK_QUESTIONS = [
 
 const MAX_CONTENT_LENGTH = 2000;
 
+interface FeedbackQuestionDef {
+  key: string;
+  label: string;
+  type: 'score' | 'text';
+  options?: { value: number; label: string }[];
+  placeholder?: string;
+}
+
+const FEEDBACK_QUESTIONS: FeedbackQuestionDef[] = [
+  {
+    key: 'clarity',
+    label: '分かりやすさ',
+    type: 'score',
+    options: [
+      { value: 5, label: 'とても分かりやすい' },
+      { value: 4, label: '分かりやすい' },
+      { value: 3, label: '普通' },
+      { value: 2, label: '少し分かりにくい' },
+      { value: 1, label: '分かりにくい' },
+    ],
+  },
+  {
+    key: 'helpful',
+    label: '役立ち度',
+    type: 'score',
+    options: [
+      { value: 5, label: 'とても役立った' },
+      { value: 4, label: '役立った' },
+      { value: 3, label: 'まあまあ' },
+      { value: 2, label: 'あまり役立たない' },
+      { value: 1, label: '役立たない' },
+    ],
+  },
+  {
+    key: 'specific',
+    label: '自分に合っていたか',
+    type: 'score',
+    options: [
+      { value: 5, label: '自分にぴったり' },
+      { value: 4, label: '合っていた' },
+      { value: 3, label: '普通' },
+      { value: 2, label: '少しズレる' },
+      { value: 1, label: '合っていない' },
+    ],
+  },
+  {
+    key: 'improvement',
+    label: '改善してほしいこと',
+    type: 'text',
+    placeholder: '例: もう少し具体的にしてほしい、長さを短くしてほしい など',
+  },
+  {
+    key: 'request',
+    label: '次に聞きたいこと・要望（任意）',
+    type: 'text',
+    placeholder: '例: もっと例題を入れてほしい、ペースについて相談したい など',
+  },
+];
+
 function makeTitle(text: string): string {
   const t = text.trim();
   if (t.length <= 20) return t;
@@ -63,8 +124,8 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   // Feedback state: map of message index -> feedback
   const [feedbackMap, setFeedbackMap] = useState<Record<number, MessageFeedback>>({});
   const [feedbackBusy, setFeedbackBusy] = useState<number | null>(null);
-  const [showRequestFor, setShowRequestFor] = useState<number | null>(null);
-  const [requestInput, setRequestInput] = useState('');
+  const [showFeedbackFor, setShowFeedbackFor] = useState<number | null>(null);
+  const [feedbackDraft, setFeedbackDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -127,17 +188,26 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   const loadFeedbackForMessages = async (conversationId: string, msgs: ChatMessage[]) => {
     const { data, error } = await supabase
       .from('chat_feedback')
-      .select('rating, request, message_content')
+      .select('rating, request, message_content, question_responses')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
     if (error || !data) return;
 
     const newFeedbackMap: Record<number, MessageFeedback> = {};
-    (data as { rating: string; request: string | null; message_content: string }[]).forEach((f) => {
+    (data as {
+      rating: string;
+      request: string | null;
+      message_content: string;
+      question_responses: QuestionResponse[] | null;
+    }[]).forEach((f) => {
       for (let i = 0; i < msgs.length; i++) {
         if (msgs[i].role === 'assistant' && msgs[i].content === f.message_content) {
-          newFeedbackMap[i] = { rating: f.rating as 'good' | 'bad', request: f.request };
+          newFeedbackMap[i] = {
+            rating: f.rating as 'good' | 'bad',
+            request: f.request,
+            questionResponses: f.question_responses ?? null,
+          };
           break;
         }
       }
@@ -227,22 +297,47 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
       .map((m) => ({ role: m.role, content: m.content }));
   };
 
-  const fetchAllFeedback = async (): Promise<{ rating: string; request: string | null; messageContent: string }[]> => {
+  const fetchAllFeedback = async (): Promise<{
+    rating: string;
+    request: string | null;
+    messageContent: string;
+    questionResponses?: QuestionResponse[] | null;
+  }[]> => {
     const { data, error } = await supabase
       .from('chat_feedback')
-      .select('rating, request, message_content, created_at')
+      .select('rating, request, message_content, question_responses, created_at')
       .order('created_at', { ascending: false })
       .limit(20);
     if (error || !data) return [];
-    return (data as { rating: string; request: string | null; message_content: string; created_at: string }[])
+    return (data as {
+      rating: string;
+      request: string | null;
+      message_content: string;
+      question_responses: QuestionResponse[] | null;
+      created_at: string;
+    }[])
       .reverse()
-      .map((f) => ({ rating: f.rating, request: f.request, messageContent: f.message_content }));
+      .map((f) => ({
+        rating: f.rating,
+        request: f.request,
+        messageContent: f.message_content,
+        questionResponses: f.question_responses ?? null,
+      }));
   };
 
-  const submitFeedback = async (messageIndex: number, rating: 'good' | 'bad', request?: string) => {
+  const submitFeedback = async (
+    messageIndex: number,
+    rating: 'good' | 'bad',
+    responses?: QuestionResponse[],
+  ) => {
     if (!activeConversationId) return;
     const msg = messages[messageIndex];
     if (!msg || msg.role !== 'assistant') return;
+
+    const filteredResponses = responses?.filter((r) => r.answer.trim().length > 0) ?? null;
+    const overallRequest = filteredResponses && filteredResponses.length > 0
+      ? filteredResponses.map((r) => `${r.question}: ${r.answer}`).join(' / ')
+      : null;
 
     setFeedbackBusy(messageIndex);
     try {
@@ -251,7 +346,8 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
         message_role: 'assistant',
         message_content: msg.content,
         rating,
-        request: request?.trim() || null,
+        request: overallRequest,
+        question_responses: filteredResponses && filteredResponses.length > 0 ? filteredResponses : null,
       });
 
       if (error) {
@@ -261,13 +357,38 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
 
       setFeedbackMap((prev) => ({
         ...prev,
-        [messageIndex]: { rating, request: request?.trim() || null },
+        [messageIndex]: {
+          rating,
+          request: overallRequest,
+          questionResponses: filteredResponses && filteredResponses.length > 0 ? filteredResponses : null,
+        },
       }));
-      setShowRequestFor(null);
-      setRequestInput('');
+      setShowFeedbackFor(null);
+      setFeedbackDraft({});
     } finally {
       setFeedbackBusy(null);
     }
+  };
+
+  const openFeedbackForm = (messageIndex: number) => {
+    setShowFeedbackFor(messageIndex);
+    setFeedbackDraft({});
+  };
+
+  const closeFeedbackForm = () => {
+    setShowFeedbackFor(null);
+    setFeedbackDraft({});
+  };
+
+  const submitStructuredFeedback = (messageIndex: number, rating: 'good' | 'bad') => {
+    const responses = FEEDBACK_QUESTIONS.map((q) => ({
+      question: q.label,
+      answer: feedbackDraft[q.key] ?? '',
+      score: q.type === 'score' && feedbackDraft[q.key]
+        ? parseInt(feedbackDraft[q.key], 10)
+        : undefined,
+    }));
+    submitFeedback(messageIndex, rating, responses);
   };
 
   const sendMessage = async (text: string) => {
@@ -372,6 +493,8 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
     setActiveConversationId(null);
     setMessages([INITIAL_MESSAGE]);
     setFeedbackMap({});
+    setShowFeedbackFor(null);
+    setFeedbackDraft({});
     setSidebarOpen(false);
   };
 
@@ -379,6 +502,8 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
     setActiveConversationId(id);
     setLoaded(false);
     setFeedbackMap({});
+    setShowFeedbackFor(null);
+    setFeedbackDraft({});
     loadMessages(id);
     setSidebarOpen(false);
   };
@@ -523,16 +648,109 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
                   {msg.role === 'assistant' && !isInitialMessage(i) && !busy && (
                     <div className="mt-1.5 max-w-[85%] w-full">
                       {feedbackMap[i] ? (
-                        <div className="flex items-center gap-2 text-xs text-gray-400">
-                          <span className="flex items-center gap-1">
-                            {feedbackMap[i].rating === 'good' ? (
-                              <><Check className="w-3.5 h-3.5 text-green-500" /> 良いと評価済み</>
-                            ) : (
-                              <><Check className="w-3.5 h-3.5 text-orange-500" /> 改善希望として記録済み</>
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1">
+                              {feedbackMap[i].rating === 'good' ? (
+                                <><Check className="w-3.5 h-3.5 text-green-500" /> 良いと評価済み</>
+                              ) : (
+                                <><Check className="w-3.5 h-3.5 text-orange-500" /> 改善希望として記録済み</>
+                              )}
+                            </span>
+                            {feedbackMap[i].questionResponses && feedbackMap[i].questionResponses!.length > 0 && (
+                              <span className="text-gray-300">
+                                （{feedbackMap[i].questionResponses!.filter((r) => r.answer.trim()).length}項目回答）
+                              </span>
                             )}
-                          </span>
-                          {feedbackMap[i].request && (
-                            <span className="text-gray-400 truncate">「{feedbackMap[i].request}」</span>
+                          </div>
+                          {feedbackMap[i].questionResponses && feedbackMap[i].questionResponses!.some((r) => r.answer.trim()) && (
+                            <div className="bg-gray-50 rounded-lg p-2 space-y-0.5">
+                              {feedbackMap[i].questionResponses!.filter((r) => r.answer.trim()).map((r, idx) => (
+                                <div key={idx} className="text-[11px] text-gray-500 leading-relaxed">
+                                  <span className="text-gray-400">{r.question}:</span> {r.answer}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => openFeedbackForm(i)}
+                            className="text-[11px] text-teal-500 hover:text-teal-600 underline"
+                          >
+                            フィードバックを編集する
+                          </button>
+                        </div>
+                      ) : showFeedbackFor === i ? (
+                        <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
+                              <MessageSquarePlus className="w-3.5 h-3.5 text-teal-500" />
+                              フィードバックを記入する
+                            </span>
+                            <button
+                              onClick={closeFeedbackForm}
+                              className="text-gray-300 hover:text-gray-500"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {FEEDBACK_QUESTIONS.map((q) => (
+                            <div key={q.key}>
+                              <label className="block text-[11px] font-medium text-gray-500 mb-1">{q.label}</label>
+                              {q.type === 'score' && q.options ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {q.options.map((opt) => {
+                                    const selected = feedbackDraft[q.key] === String(opt.value);
+                                    return (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => setFeedbackDraft((prev) => ({ ...prev, [q.key]: String(opt.value) }))}
+                                        className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${
+                                          selected
+                                            ? 'bg-teal-50 border-teal-400 text-teal-700'
+                                            : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                                        }`}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={feedbackDraft[q.key] ?? ''}
+                                  onChange={(e) => setFeedbackDraft((prev) => ({ ...prev, [q.key]: e.target.value }))}
+                                  maxLength={300}
+                                  placeholder={q.placeholder}
+                                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400 focus:border-transparent"
+                                />
+                              )}
+                            </div>
+                          ))}
+
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={() => submitStructuredFeedback(i, 'good')}
+                              disabled={feedbackBusy === i}
+                              className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-white bg-green-500 hover:bg-green-600 rounded-lg py-2 transition-colors disabled:opacity-40"
+                            >
+                              <ThumbsUp className="w-3.5 h-3.5" />
+                              良いとして送信
+                            </button>
+                            <button
+                              onClick={() => submitStructuredFeedback(i, 'bad')}
+                              disabled={feedbackBusy === i}
+                              className="flex-1 flex items-center justify-center gap-1 text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg py-2 transition-colors disabled:opacity-40"
+                            >
+                              <ThumbsDown className="w-3.5 h-3.5" />
+                              改善希望として送信
+                            </button>
+                          </div>
+                          {feedbackBusy === i && (
+                            <div className="flex justify-center">
+                              <Loader2 className="w-3.5 h-3.5 text-gray-300 animate-spin" />
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -547,47 +765,15 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
                               良い
                             </button>
                             <button
-                              onClick={() => {
-                                if (showRequestFor === i) {
-                                  setShowRequestFor(null);
-                                } else {
-                                  setShowRequestFor(i);
-                                }
-                              }}
+                              onClick={() => openFeedbackForm(i)}
                               disabled={feedbackBusy === i}
                               className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg px-2 py-1 transition-colors disabled:opacity-40"
                             >
                               <ThumbsDown className="w-3.5 h-3.5" />
-                              改善希望
+                              詳細フィードバック
                             </button>
                             {feedbackBusy === i && <Loader2 className="w-3.5 h-3.5 text-gray-300 animate-spin" />}
                           </div>
-
-                          {showRequestFor === i && (
-                            <div className="mt-2 flex gap-1.5">
-                              <input
-                                type="text"
-                                value={requestInput}
-                                onChange={(e) => setRequestInput(e.target.value)}
-                                maxLength={300}
-                                placeholder="どう改善してほしいか教えてください"
-                                className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400 focus:border-transparent"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && requestInput.trim()) {
-                                    submitFeedback(i, 'bad', requestInput);
-                                  }
-                                }}
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => submitFeedback(i, 'bad', requestInput)}
-                                disabled={!requestInput.trim()}
-                                className="shrink-0 text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
-                              >
-                                送信
-                              </button>
-                            </div>
-                          )}
                         </>
                       )}
                     </div>

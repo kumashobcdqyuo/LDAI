@@ -31,10 +31,17 @@ interface ChatMemory {
   content: string;
 }
 
+interface QuestionResponse {
+  question: string;
+  answer: string;
+  score?: number;
+}
+
 interface ChatFeedbackEntry {
   rating: string;
   request: string | null;
   messageContent: string;
+  questionResponses?: QuestionResponse[] | null;
 }
 
 interface PlanRequest {
@@ -223,6 +230,20 @@ function buildRuleBasedPlan(req: PlanRequest): GeneratedPlan {
     if (badCount > 0 || goodCount > 0) {
       adviceParts.push(`過去のチャットフィードバック（良い${goodCount}件・改善希望${badCount}件）を反映しました。`);
     }
+    // Extract specific improvement requests from structured feedback
+    const improvementRequests: string[] = [];
+    for (const f of req.feedbackMemories) {
+      if (f.questionResponses) {
+        for (const qr of f.questionResponses) {
+          if (qr.question.includes("改善") && qr.answer.trim()) {
+            improvementRequests.push(qr.answer.slice(0, 80));
+          }
+        }
+      }
+    }
+    if (improvementRequests.length > 0) {
+      adviceParts.push(`過去の改善要望（${improvementRequests.slice(0, 2).join("、")}）を踏まえました。`);
+    }
   }
 
   const baseAdvice = adviceParts.length > 0
@@ -330,7 +351,13 @@ function buildPrompt(req: PlanRequest): string {
     for (const f of req.feedbackMemories.slice(-10)) {
       const ratingText = f.rating === "good" ? "良い評価" : "改善希望";
       const requestText = f.request ? `（要望: ${f.request.slice(0, 150)}）` : "";
-      lines.push(`・[${ratingText}] ${f.messageContent.slice(0, 100)}${requestText}`);
+      const responsesText = f.questionResponses && f.questionResponses.length > 0
+        ? "\n  詳細回答: " + f.questionResponses
+            .filter((r) => r.answer.trim().length > 0)
+            .map((r) => `${r.question}: ${r.answer}${r.score !== undefined ? ` [${r.score}/5]` : ""}`)
+            .join(", ")
+        : "";
+      lines.push(`・[${ratingText}] ${f.messageContent.slice(0, 100)}${requestText}${responsesText}`);
     }
   }
 
@@ -350,6 +377,7 @@ function buildPrompt(req: PlanRequest): string {
     "・優先したいことにある科目は時間を多めにする",
     "・その他の要望は計画の配分や構成に必ず反映する",
     "・修正希望がある場合は、前回の計画と比較して必ず変更を加える",
+    "・過去のフィードバックの詳細回答（分かりやすさ・役立ち度・自分に合っていたかのスコアや改善要望）を参考に、学習者が不満に思った点を改善する",
     "・毎日同じ配分ではなく、曜日や進捗に応じて変化を持たせる",
     "・adviceには学習者の詳細条件やメモリを踏まえた個別的な内容を書く",
     "",
