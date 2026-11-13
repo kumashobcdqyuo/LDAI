@@ -1,4 +1,8 @@
-const OPENROUTER_MODEL = "google/gemma-4-31b-it:free";
+const OPENROUTER_MODELS = [
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+];
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -192,7 +196,7 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
 - 励ましと具体的な提案を含める`;
 
     if (!openRouterKey) {
-      await logAiCall("no_key", null, null);
+      await logAiCall(OPENROUTER_MODELS[0], "no_key", null, null);
       const lastUserMsg = messages[messages.length - 1]?.content ?? "";
       const fallback = getFallbackResponse(lastUserMsg, records ?? [], plans ?? [], memories ?? [], feedbackMemories ?? []);
       return new Response(
@@ -204,26 +208,39 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
       );
     }
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openRouterKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        max_tokens: 4000,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      }),
-    });
+    const chatMessages = [
+      { role: "system", content: systemPrompt },
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ];
+    let reply: string | null = null;
+    for (const model of OPENROUTER_MODELS) {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openRouterKey}`,
+        },
+        body: JSON.stringify({ model, max_tokens: 4000, messages: chatMessages }),
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content?.trim();
+        if (content) {
+          reply = content;
+          break;
+        }
+        await logAiCall(model, "empty_reply", response.status, JSON.stringify(data));
+        continue;
+      }
+
       const errText = await response.text();
-      console.error("OpenRouter API error:", response.status, errText);
-      await logAiCall("upstream_error", response.status, errText);
+      console.error("OpenRouter API error:", model, response.status, errText);
+      await logAiCall(model, "upstream_error", response.status, errText);
+      if (!RETRYABLE_STATUSES.has(response.status)) break;
+    }
+
+    if (reply === null) {
       const fallback = getFallbackResponse(
         messages[messages.length - 1]?.content ?? "",
         records ?? [],
@@ -240,13 +257,6 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
       );
     }
 
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      await logAiCall("empty_reply", response.status, JSON.stringify(data));
-    }
-    const reply = content || "すみません、回答できませんでした。";
-
     return new Response(
       JSON.stringify({ reply }),
       {
@@ -256,7 +266,7 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
     );
   } catch (err) {
     console.error("Chat edge function error:", err);
-    await logAiCall("exception", null, String(err?.message ?? err));
+    await logAiCall(OPENROUTER_MODELS[0], "exception", null, String(err?.message ?? err));
     return new Response(
       JSON.stringify({ error: err.message }),
       {
@@ -267,7 +277,7 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
   }
 });
 
-async function logAiCall(outcome: string, httpStatus: number | null, errorBody: string | null) {
+async function logAiCall(model: string, outcome: string, httpStatus: number | null, errorBody: string | null) {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -281,7 +291,7 @@ async function logAiCall(outcome: string, httpStatus: number | null, errorBody: 
         Prefer: "return=minimal",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model,
         outcome,
         http_status: httpStatus,
         error_body: errorBody ? errorBody.slice(0, 2000) : null,
