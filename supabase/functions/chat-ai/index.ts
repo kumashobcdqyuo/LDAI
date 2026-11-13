@@ -209,7 +209,7 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
       },
       body: JSON.stringify({
         model: "google/gemma-4-31b-it:free",
-        max_tokens: 1200,
+        max_tokens: 4000,
         messages: [
           { role: "system", content: systemPrompt },
           ...messages.map((m) => ({ role: m.role, content: m.content })),
