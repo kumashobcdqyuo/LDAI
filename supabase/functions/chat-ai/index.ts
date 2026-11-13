@@ -1,11 +1,9 @@
 const OPENROUTER_MODELS = [
-  "thinkingmachines/inkling-2-small:free",
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "openai/gpt-oss-120b:free",
   "openrouter/free",
 ];
-const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -240,7 +238,6 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
       const errText = await response.text();
       console.error("OpenRouter API error:", model, response.status, errText);
       await logAiCall(model, "upstream_error", response.status, errText);
-      if (!RETRYABLE_STATUSES.has(response.status)) break;
     }
 
     if (reply === null) {
