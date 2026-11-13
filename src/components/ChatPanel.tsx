@@ -817,31 +817,28 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
                 </div>
               )}
 
-              {messages.length === 1 && !busy && (
-                <div className="pt-2">
-                  <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
-                    <MessageCircle className="w-3 h-3" />
-                    こんなことが聞けます
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {QUICK_QUESTIONS.map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => sendMessage(q)}
-                        className="bg-teal-50 hover:bg-teal-100 text-teal-700 text-sm font-medium px-3 py-1.5 rounded-full transition-colors border border-teal-100"
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
 
         {/* Input */}
-        <div className="px-4 py-3 border-t border-gray-100">
+        <div className="px-4 py-3 border-t border-gray-100 space-y-2.5">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <span className="shrink-0 text-xs text-gray-400 flex items-center gap-1">
+              <MessageCircle className="w-3 h-3" />
+              よく聞かれる質問
+            </span>
+            {QUICK_QUESTIONS.map((q) => (
+              <button
+                key={q}
+                onClick={() => sendMessage(q)}
+                disabled={busy}
+                className="shrink-0 whitespace-nowrap bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-medium px-3 py-1.5 rounded-full transition-colors border border-teal-100 disabled:opacity-40"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
