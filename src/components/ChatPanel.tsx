@@ -17,6 +17,7 @@ interface Conversation {
 }
 
 interface MessageFeedback {
+  id: string;
   rating: 'good' | 'bad';
   request: string | null;
   questionResponses?: QuestionResponse[] | null;
@@ -126,6 +127,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   const [feedbackBusy, setFeedbackBusy] = useState<number | null>(null);
   const [showFeedbackFor, setShowFeedbackFor] = useState<number | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<Record<string, string>>({});
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -188,7 +190,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   const loadFeedbackForMessages = async (conversationId: string, msgs: ChatMessage[]) => {
     const { data, error } = await supabase
       .from('chat_feedback')
-      .select('rating, request, message_content, question_responses')
+      .select('id, rating, request, message_content, question_responses')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
@@ -196,6 +198,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
 
     const newFeedbackMap: Record<number, MessageFeedback> = {};
     (data as {
+      id: string;
       rating: string;
       request: string | null;
       message_content: string;
@@ -204,6 +207,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
       for (let i = 0; i < msgs.length; i++) {
         if (msgs[i].role === 'assistant' && msgs[i].content === f.message_content) {
           newFeedbackMap[i] = {
+            id: f.id,
             rating: f.rating as 'good' | 'bad',
             request: f.request,
             questionResponses: f.question_responses ?? null,
@@ -339,40 +343,59 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
       ? filteredResponses.map((r) => `${r.question}: ${r.answer}`).join(' / ')
       : null;
 
-    setFeedbackBusy(messageIndex);
-    try {
-      const { error } = await supabase.from('chat_feedback').insert({
-        conversation_id: activeConversationId,
-        message_role: 'assistant',
-        message_content: msg.content,
-        rating,
-        request: overallRequest,
-        question_responses: filteredResponses && filteredResponses.length > 0 ? filteredResponses : null,
-      });
+    const existing = feedbackMap[messageIndex];
+    const questionResponses = filteredResponses && filteredResponses.length > 0 ? filteredResponses : null;
+    const fields = { rating, request: overallRequest, question_responses: questionResponses };
 
-      if (error) {
-        console.error('Failed to save feedback:', error.message);
-        return;
+    setFeedbackBusy(messageIndex);
+    setFeedbackError(null);
+    try {
+      let feedbackId: string;
+      if (existing) {
+        const { error } = await supabase.from('chat_feedback').update(fields).eq('id', existing.id);
+        if (error) throw error;
+        feedbackId = existing.id;
+      } else {
+        const { data, error } = await supabase
+          .from('chat_feedback')
+          .insert({
+            conversation_id: activeConversationId,
+            message_role: 'assistant',
+            message_content: msg.content,
+            ...fields,
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+        feedbackId = (data as { id: string }).id;
       }
 
       setFeedbackMap((prev) => ({
         ...prev,
-        [messageIndex]: {
-          rating,
-          request: overallRequest,
-          questionResponses: filteredResponses && filteredResponses.length > 0 ? filteredResponses : null,
-        },
+        [messageIndex]: { id: feedbackId, rating, request: overallRequest, questionResponses },
       }));
       setShowFeedbackFor(null);
       setFeedbackDraft({});
+    } catch (err) {
+      console.error('Failed to save feedback:', err);
+      setFeedbackError('フィードバックを保存できませんでした。もう一度お試しください。');
     } finally {
       setFeedbackBusy(null);
     }
   };
 
   const openFeedbackForm = (messageIndex: number) => {
+    const saved = feedbackMap[messageIndex]?.questionResponses ?? [];
+    const draft: Record<string, string> = {};
+    FEEDBACK_QUESTIONS.forEach((q) => {
+      const found = saved.find((r) => r.question === q.label);
+      if (!found) return;
+      if (q.type === 'score' && found.score !== undefined) draft[q.key] = String(found.score);
+      if (q.type === 'text') draft[q.key] = found.answer;
+    });
     setShowFeedbackFor(messageIndex);
-    setFeedbackDraft({});
+    setFeedbackDraft(draft);
+    setFeedbackError(null);
   };
 
   const closeFeedbackForm = () => {
@@ -381,13 +404,14 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
   };
 
   const submitStructuredFeedback = (messageIndex: number, rating: 'good' | 'bad') => {
-    const responses = FEEDBACK_QUESTIONS.map((q) => ({
-      question: q.label,
-      answer: feedbackDraft[q.key] ?? '',
-      score: q.type === 'score' && feedbackDraft[q.key]
-        ? parseInt(feedbackDraft[q.key], 10)
-        : undefined,
-    }));
+    const responses: QuestionResponse[] = FEEDBACK_QUESTIONS.map((q) => {
+      const value = feedbackDraft[q.key] ?? '';
+      if (q.type === 'text') return { question: q.label, answer: value.trim() };
+      const option = q.options?.find((opt) => String(opt.value) === value);
+      return option
+        ? { question: q.label, answer: option.label, score: option.value }
+        : { question: q.label, answer: '' };
+    });
     submitFeedback(messageIndex, rating, responses);
   };
 
@@ -647,7 +671,7 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
                   {/* Feedback buttons for AI messages (skip initial greeting and busy state) */}
                   {msg.role === 'assistant' && !isInitialMessage(i) && !busy && (
                     <div className="mt-1.5 max-w-[85%] w-full">
-                      {feedbackMap[i] ? (
+                      {feedbackMap[i] && showFeedbackFor !== i ? (
                         <div className="text-xs text-gray-400 space-y-1">
                           <div className="flex items-center gap-2">
                             <span className="flex items-center gap-1">
@@ -747,6 +771,9 @@ export function ChatPanel({ records, userName, plans = [], initialPrompt = null,
                               改善希望として送信
                             </button>
                           </div>
+                          {feedbackError && showFeedbackFor === i && (
+                            <p className="text-[11px] text-red-500">{feedbackError}</p>
+                          )}
                           {feedbackBusy === i && (
                             <div className="flex justify-center">
                               <Loader2 className="w-3.5 h-3.5 text-gray-300 animate-spin" />
