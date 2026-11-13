@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const claudeKey = Deno.env.get("CLAUDE_API_KEY");
+    const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
 
     // Build study context summary
     let contextSummary = "学習データがまだありません。";
@@ -189,7 +189,7 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
 - 問題の解答・解説を求められた場合は、丁寧なステップ解説を心がける
 - 励ましと具体的な提案を含める`;
 
-    if (!claudeKey) {
+    if (!openRouterKey) {
       const lastUserMsg = messages[messages.length - 1]?.content ?? "";
       const fallback = getFallbackResponse(lastUserMsg, records ?? [], plans ?? [], memories ?? [], feedbackMemories ?? []);
       return new Response(
@@ -201,29 +201,25 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
       );
     }
 
-    const claudeMessages = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": claudeKey,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${openRouterKey}`,
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "google/gemma-4-31b-it:free",
         max_tokens: 1200,
-        system: systemPrompt,
-        messages: claudeMessages,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.map((m) => ({ role: m.role, content: m.content })),
+        ],
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("Claude API error:", response.status, errText);
+      console.error("OpenRouter API error:", response.status, errText);
       const fallback = getFallbackResponse(
         messages[messages.length - 1]?.content ?? "",
         records ?? [],
@@ -240,8 +236,8 @@ ${buildPlanSummary(plans)}${memorySummary}${feedbackSummary}
       );
     }
 
-    const claudeData = await response.json();
-    const reply = claudeData?.content?.[0]?.text ?? "すみません、回答できませんでした。";
+    const data = await response.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim() || "すみません、回答できませんでした。";
 
     return new Response(
       JSON.stringify({ reply }),
