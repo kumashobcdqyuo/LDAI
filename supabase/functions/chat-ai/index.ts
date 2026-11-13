@@ -1,6 +1,8 @@
 const OPENROUTER_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
+  "openai/gpt-oss-120b:free",
+  "openrouter/free",
 ];
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
